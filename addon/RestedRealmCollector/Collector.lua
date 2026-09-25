@@ -1,11 +1,11 @@
 -- RestedRealm Forever collection probe. No gameplay actions or network access.
 local ADDON = ...
-local VERSION = "0.1.15"
+local VERSION = "0.1.16"
 local IDENTITY_SCHEMA = 2
 -- 1: player name, race and class in captured text are replaced by <name>,
 -- <race> and <class>. Only records carrying this may upload their text.
 local TEXT_SCHEMA = 1
-local MAX_RECORDS = 1500
+local MAX_RECORDS = 5000
 local MAX_TEXT = 8192
 local MAX_ITEMS = 200
 local MAX_QUEST_ENTRIES = 100

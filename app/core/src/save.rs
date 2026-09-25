@@ -10,7 +10,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-pub const MAX_SAVE_BYTES: u64 = 32 * 1024 * 1024;
+/// A full addon save (5,000 records with quest text) stays far below this.
+pub const MAX_SAVE_BYTES: u64 = 128 * 1024 * 1024;
 pub const MAX_RECORDS: usize = 50_000;
 pub const FOREVER_PRODUCT: &str = "wow_classic_beta";
 pub const SAVE_FILE: &str = "RestedRealmCollector.lua";
@@ -38,7 +39,7 @@ fn fingerprint(path: &Path) -> Result<(u64, Option<SystemTime>)> {
 pub fn stable_bytes(path: &Path, delay: Duration) -> Result<Vec<u8>> {
     let first = fingerprint(path)?;
     if first.0 > MAX_SAVE_BYTES {
-        return Err(Error::SaveFormat("save exceeds 32 MiB limit".into()));
+        return Err(Error::SaveFormat("save exceeds 128 MiB limit".into()));
     }
     std::thread::sleep(delay);
     let second = fingerprint(path)?;
@@ -357,6 +358,39 @@ pub(crate) mod tests {
         assert_eq!(after.get("schema"), Some(&Value::Int(1)));
         assert_eq!(f.count(), 1);
         assert_eq!(fs::read_dir(f.queue.state.join("Backups")).unwrap().count(), 1);
+    }
+
+    /// A full addon save: 5,000 records with quest text, items and objectives.
+    fn full_save() -> String {
+        let text = "Greetings, <name>. ".repeat(55);
+        let mut out = String::from("RestedRealmCollectorDB = {\n [\"dropped\"] = 0, [\"records\"] = {\n");
+        for seq in 1..=5000 {
+            out.push_str(&format!(
+                "  {{ [\"seq\"] = {seq}, [\"kind\"] = \"quest\", [\"textSchema\"] = 1, [\"observedAt\"] = 1790000000, \
+                 [\"context\"] = {{ [\"product\"] = \"wow_classic_beta\", [\"build\"] = \"70009\", [\"locale\"] = \"enUS\", \
+                 [\"location\"] = {{ [\"mapID\"] = 1420, [\"x\"] = 0.4512, [\"y\"] = 0.6634, [\"zone\"] = \"Tirisfal Glades\" }} }}, \
+                 [\"data\"] = {{ [\"id\"] = {seq}, [\"title\"] = \"Quest {seq}\", [\"questText\"] = \"{text}\", \
+                 [\"items\"] = {{ {items} }}, [\"objectives\"] = {{ {objectives} }} }} }},\n",
+                items = (0..10).map(|i| format!("{{ [\"type\"] = \"choice\", [\"id\"] = {}, [\"quantity\"] = 1 }}", 3000 + i)).collect::<Vec<_>>().join(", "),
+                objectives = (0..4).map(|i| format!("{{ [\"type\"] = \"monster\", [\"required\"] = {i}, [\"finished\"] = false }}")).collect::<Vec<_>>().join(", "),
+            ));
+        }
+        out.push_str(" },\n}\n");
+        out
+    }
+
+    #[test]
+    fn a_full_5000_record_save_is_read_and_freed() {
+        let mut f = Fixture::new();
+        let save = full_save();
+        assert!((save.len() as u64) < MAX_SAVE_BYTES / 4, "a full save is {} bytes", save.len());
+        f.write(&save);
+        let started = std::time::Instant::now();
+        let result = f.scan().unwrap();
+        let took = started.elapsed();
+        assert_eq!(result.new, 5000);
+        eprintln!("full save: {} MB, imported in {:?}", save.len() / 1_000_000, took);
+        assert_eq!(compact_one(&f.queue, &f.path, Duration::ZERO, &|| false).unwrap(), 5000);
     }
 
     #[test]

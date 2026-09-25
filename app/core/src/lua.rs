@@ -66,7 +66,8 @@ impl Value {
     }
 }
 
-const MAX_NODES: usize = 500_000;
+/// Values in one save. A full 5,000-record save uses well under a million.
+const MAX_NODES: usize = 4_000_000;
 const MAX_DEPTH: usize = 64;
 
 struct Parser<'a> {

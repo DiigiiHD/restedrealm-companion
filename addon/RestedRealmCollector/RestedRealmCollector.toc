@@ -2,7 +2,7 @@
 ## Title: RestedRealm Collector
 ## Notes: Records Forever world observations for RestedRealm Companion. /rrc off pauses it.
 ## Author: RestedRealm
-## Version: 0.1.15
+## Version: 0.1.16
 ## SavedVariables: RestedRealmCollectorDB
 
 Collector.lua

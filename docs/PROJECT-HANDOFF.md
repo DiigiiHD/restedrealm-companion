@@ -48,7 +48,7 @@ Blizzard's [EULA](https://www.blizzard.com/en-us/legal/08b946df-660a-40e4-a072-1
 ## Next work
 
 1. The source is MIT licensed (see [LICENSE](../LICENSE), added 25 September 2026). The license covers this project's code only, not Blizzard game content or data. The local queue, game saves, credentials, backups and staging screenshots must remain private.
-2. If the owner wants unattended uploads after each save, have them enable the companion's automatic upload checkbox. It is presently off.
+2. Build the Windows app described in [COMPANION-APP.md](COMPANION-APP.md): installer, account connection through the browser, automatic addon install and updates, and automatic upload on by default. Until it ships, if the owner wants unattended uploads after each save, have them enable the companion's automatic upload checkbox. It is presently off.
 3. Verify new Forever builds and addon API changes with a real session. Keep build and character context attached to every observation.
 4. Add reviewer decisions, a conflict queue, catalog validation and explicit publication rules for more claim types before expanding automatic website updates.
 5. Complete privacy and content-rights review before public contributor onboarding or publishing full game dialogue. Add contributor credit only after explicit opt-in.

@@ -52,7 +52,7 @@ Blizzard's [EULA](https://www.blizzard.com/en-us/legal/08b946df-660a-40e4-a072-1
 2. Finish the Windows app in `app/` (see [COMPANION-APP.md](COMPANION-APP.md) for status): publish the first release ([RELEASING.md](RELEASING.md)), then Battle.net discovery, the website settings file and the in-game status line. The Python prototype in `companion/` is kept as the reference and should not run next to the app.
 3. Verify new Forever builds and addon API changes with a real session. Keep build and character context attached to every observation.
 4. Add reviewer decisions, a conflict queue, catalog validation and explicit publication rules for more claim types before expanding automatic website updates.
-5. Complete privacy and content-rights review before public contributor onboarding or publishing full game dialogue. Add contributor credit only after explicit opt-in.
+5. Quest text: decided on 25 September 2026 (collect and show as Blizzard content, sanitized in the addon, published when two players agree). NPC dialogue is stored privately and has no public display yet.
 
 ## Git and naming
 

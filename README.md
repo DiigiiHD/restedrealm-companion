@@ -16,14 +16,14 @@ Source files are in `addon/RestedRealmCollector/`. The addon uses Forever interf
 
 1. Start or restart Forever. Check that **RestedRealm Collector** appears in the AddOns list.
 2. Type `/rrc status`. It should say collection is off.
-3. Collection is on from the first login (since 0.1.14). Type `/rrc off` to pause it and `/rrc on` to resume; the choice is remembered. Visible NPC and quest text is saved locally by default and never uploaded. Use `/rrc text off` if you want only IDs and short labels.
+3. Collection is on from the first login (since 0.1.14). Type `/rrc off` to pause it and `/rrc on` to resume; the choice is remembered. Visible NPC and quest text is saved by default, with your character's name, race and class replaced by `<name>`, `<race>` and `<class>` (since 0.1.15), and RestedRealm Companion uploads it. Use `/rrc text off` if you want only IDs and short labels.
 4. Talk to one NPC with gossip, open one vendor, inspect one quest and open one loot window. Normal interaction only; the addon never clicks or plays for you.
 5. Type `/rrc status` to check the saved count. Log out normally or type `/reload` to make the game save the data. Check `WTF\Account\<account>\SavedVariables\RestedRealmCollector.lua` under `_classic_beta_` after WoW has completed the save. Do not share the file unreviewed.
 6. Restart Forever and check `/rrc status` again. The count should survive. This is especially important because beta SavedVariables behavior has changed recently.
 
 Commands: `/rrc on`, `/rrc off`, `/rrc status`, `/rrc scan`, `/rrc text on`, `/rrc text off`, `/rrc clear`.
 
-Collection is off on first load. Once enabled, full visible NPC and quest text stays local until a separate publication review. The addon holds at most 1,500 records and stops recording when full, preserving earlier observations. It does not intentionally collect chat, player identities, account IDs, full inventory, credentials or continuous movement history. Game dialogue could include a character name, so the future uploader must review and redact text before sending it. Locations are the **player's point at interaction**, not a proven exact NPC or object spawn. `loot_window` means an item was visible in a loot window, not that it was acquired. Some IDs or fields may be absent until verified in this Forever build.
+Collection is on from the first load (since 0.1.14). Since 0.1.15 the addon replaces the player's name, race and class in all captured text with `<name>`, `<race>` and `<class>` before saving, and marks those records (`textSchema = 1`); only marked records upload their text. Text saved by older versions still holds the name and stays local. Quest text is Blizzard's game content; RestedRealm shows it with attribution once two players report the same words. The addon holds at most 1,500 records and stops recording when full, preserving earlier observations. It does not intentionally collect chat, player identities, account IDs, full inventory, credentials or continuous movement history. Locations are the **player's point at interaction**, not a proven exact NPC or object spawn. `loot_window` means an item was visible in a loot window, not that it was acquired. Some IDs or fields may be absent until verified in this Forever build.
 
 ## First live result, 25 September 2026
 

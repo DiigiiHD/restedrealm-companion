@@ -1,0 +1,46 @@
+name: Companion core
+
+on:
+  push:
+    paths: ["app/**", "companion/**", "tests/**", ".github/workflows/core.yml"]
+  pull_request:
+    paths: ["app/**", "companion/**", "tests/**", ".github/workflows/core.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Format
+        run: cargo fmt --check
+      - name: Lint
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Rust tests
+        run: cargo test
+      - name: Python companion tests
+        working-directory: .
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Parity with the Python companion
+        working-directory: .
+        run: |
+          cargo build --manifest-path app/Cargo.toml
+          python tests/parity_check.py --rounds 400 --seed ${{ github.run_number }}

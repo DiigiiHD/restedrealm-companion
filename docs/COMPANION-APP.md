@@ -1,6 +1,6 @@
 # RestedRealm Companion: Windows app plan
 
-Status: plan, nothing built yet. Written 25 September 2026 after the owner's decisions below. The current Python companion keeps working until this app replaces it.
+Status: phase 1 (the Rust core) is built and tested; see [app/README.md](../app/README.md). Phases 2 to 6 are not built yet. Written 25 September 2026 after the owner's decisions below. The current Python companion keeps working until this app replaces it.
 
 ## Goal
 
@@ -117,7 +117,7 @@ Tauri's own update signature (above) is free and separate. It protects updates w
 
 ## Phases
 
-1. **Core port.** Rust core with parity tests against the Python version. No window yet. Apply to SignPath Foundation in parallel.
+1. **Core port. Done 25 September 2026.** Rust core in `app/core` with 20 tests of its own and a parity check that matches the Python version byte for byte on generated saves, ready to run on Windows and Linux by GitHub Actions once `docs/ci/core.yml` is moved to `.github/workflows/`. No window yet. Applying to SignPath Foundation is still to do.
 2. **App shell.** Tauri window in the website look, setup screens, tray icon, start with Windows, settings, import of the existing pilot queue.
 3. **Account connection.** Website changes for opening pairing, the approval page and the return link. The app side of the same flow.
 4. **Addon handling.** Finding WoW, the website settings file, installing and updating the addon, `CompanionStatus.lua` and the in-game status line.

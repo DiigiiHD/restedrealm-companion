@@ -34,6 +34,7 @@ The website's current claim extractor covers only `quest_objectives` reward choi
 | Addon capture | `addon/RestedRealmCollector/Collector.lua`, `.toc` | `tests/collector_smoke.lua` with a Lua runtime; then an actual Forever session and `/rrc status` |
 | Companion import and queue | `companion/restedrealm_companion.py`, `save_parser.py`, `gui.py` | `python -m unittest discover -s tests -p 'test_*.py' -v` |
 | Pairing and upload | `companion/uploader.py`, `windows_credentials.py`, `UPLOAD-CONTRACT.md` | Mock transport tests, then a clearly labeled synthetic batch and duplicate retry before a new deployment is trusted |
+| Windows app core (Rust) | `app/core/src/*.rs`, `app/README.md` | `cargo fmt --check`, `cargo clippy`, `cargo test` in `app/`, then `python tests/parity_check.py` |
 | Website intake | `/opt/restedrealm/src/server/collector.ts`, `src/app/api/collector/`, migrations 054 and 055 | TypeScript, production build, isolated database integration tests, account isolation and browser checks |
 | Public evidence | `/opt/restedrealm/src/lib/collector-claim-rules.ts`, `src/server/collector-claims.ts`, `src/app/quests/[id]/page.tsx`, `docs/COLLECTOR-EVIDENCE-POLICY.md` | Conflict, distinct account, build rollover, deletion cascade and desktop/phone rendering checks |
 

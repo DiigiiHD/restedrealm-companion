@@ -1,0 +1,26 @@
+[package]
+name = "rrc-core"
+description = "RestedRealm Companion core: save reading, local queue and upload"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "rrc_core"
+
+[[bin]]
+name = "rrc-core"
+path = "src/bin/rrc-core.rs"
+
+[dependencies]
+hex = "0.4"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"
+tempfile = "3"
+thiserror = "2"
+ureq = { version = "2", default-features = false, features = ["tls"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security_Credentials", "Win32_System_Diagnostics_ToolHelp"] }

@@ -22,6 +22,32 @@ The Rust core that the app will run on. It ports the Python companion in [`compa
 
 `rrc-core` is a command-line tool over the same code for development and support. Run `cargo run` in `app/` with no arguments to see its commands. Players will use the app.
 
+## `src-tauri/` and `ui/`: phase 2, built
+
+The Windows app around the core. It has not yet run on a Windows PC; everything below was built and checked on Linux, and the Windows build compiles.
+
+| Part | What it does |
+| --- | --- |
+| `ui/` | The window: plain HTML, CSS and JavaScript in the website's colours, fonts (Inter and Lora, SIL Open Font License, bundled) and emblem. No build step and nothing loaded from the internet. |
+| `src-tauri/src/main.rs` | Starts the app: one copy at a time, `--background` when Windows starts it, closing the window hides it next to the clock. |
+| `src-tauri/src/worker.rs` | Watches the addon's save, imports it, uploads when automatic upload is on, and frees the addon's space once 200 or more records are safely queued and WoW is closed. A five-minute check catches anything the file watcher misses. |
+| `src-tauri/src/commands.rs` | Everything the window may ask for. Each command does one fixed thing; the window cannot open arbitrary URLs or files. |
+| `src-tauri/src/tray.rs` | The icon next to the clock: status, Upload now, Open restedrealm.com, Quit. |
+| `src-tauri/src/addon.rs` | Finds the Forever folder in the usual places and installs the bundled addon. Phase 4 replaces the guesses with Battle.net discovery. |
+| `src-tauri/src/labels.rs` | Plain words for record kinds. |
+
+The app keeps its data in `%LOCALAPPDATA%\RestedRealm Companion`. On first start it copies the Python pilot's queue and backups from `%LOCALAPPDATA%\RestedRealmCollector\Companion` into that folder, once, and leaves the old folder untouched. The pairing carries over because both use the same Windows Credential Manager entry.
+
+Automatic upload is on only after the player leaves it on in setup. Deleting local data switches it off again until the player turns it back on.
+
+To run it during development:
+
+```bash
+cd app
+npm install
+npm run dev      # or: cargo run -p restedrealm-companion
+```
+
 ## Checks
 
 ```bash
@@ -29,6 +55,9 @@ cd app
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
+
+# The window's screens, with a stand-in for the Rust side (see tests/ui-screens.mjs):
+node ../tests/ui-screens.mjs /tmp/companion-shots
 
 # Byte-for-byte agreement with the Python companion on generated saves:
 cargo build

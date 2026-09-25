@@ -34,6 +34,8 @@ impl Queue {
     pub fn open(state: &Path) -> Result<Queue> {
         std::fs::create_dir_all(state)?;
         let db = Connection::open(state.join(QUEUE_FILE))?;
+        // The app's window and its background worker each hold a connection.
+        db.busy_timeout(std::time::Duration::from_secs(10))?;
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.pragma_update(None, "synchronous", "FULL")?;
         db.pragma_update(None, "secure_delete", "ON")?;
@@ -115,6 +117,26 @@ impl Queue {
         Ok(())
     }
 
+    /// Records the last import of one save held.
+    pub fn imported_record_count(&self, source_id: &str) -> Result<Option<i64>> {
+        Ok(self
+            .db
+            .query_row("SELECT record_count FROM imports WHERE source_id=?", [source_id], |r| r.get(0))
+            .optional()?)
+    }
+
+    /// Queued records by kind whose `observedAt` is at or after `since`.
+    pub fn kinds_since(&self, since: i64) -> Result<Vec<(String, i64)>> {
+        let mut statement = self.db.prepare(
+            "SELECT json_extract(payload, '$.kind'), COUNT(*) FROM observations
+             WHERE json_extract(payload, '$.observedAt') >= ? GROUP BY 1 ORDER BY 2 DESC",
+        )?;
+        let rows = statement
+            .query_map([since], |r| Ok((r.get::<_, Option<String>>(0)?.unwrap_or_default(), r.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// Delete the companion's copy only. The game save is not touched.
     pub fn forget(&mut self) -> Result<()> {
         let tx = self.db.transaction()?;
@@ -125,5 +147,71 @@ impl Queue {
         self.db.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
         self.db.execute("VACUUM", [])?;
         Ok(())
+    }
+}
+
+/// Copy the Python companion's queue and backups into a new state folder, once.
+/// The old folder is left untouched. Returns whether anything was copied.
+pub fn migrate_legacy(old_state: &Path, new_state: &Path) -> Result<bool> {
+    let old_queue = old_state.join(QUEUE_FILE);
+    if new_state.join(QUEUE_FILE).exists() || !old_queue.is_file() {
+        return Ok(false);
+    }
+    std::fs::create_dir_all(new_state)?;
+    // SQLite's online backup reads a consistent copy, including a pending WAL.
+    let source = Connection::open_with_flags(&old_queue, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let partial = new_state.join(format!("{QUEUE_FILE}.migrating"));
+    let _ = std::fs::remove_file(&partial);
+    {
+        let mut target = Connection::open(&partial)?;
+        rusqlite::backup::Backup::new(&source, &mut target)?.run_to_completion(256, std::time::Duration::ZERO, None)?;
+    }
+    let old_backups = old_state.join("Backups");
+    if old_backups.is_dir() {
+        let new_backups = new_state.join("Backups");
+        std::fs::create_dir_all(&new_backups)?;
+        for entry in std::fs::read_dir(&old_backups)?.flatten() {
+            let target = new_backups.join(entry.file_name());
+            if entry.path().is_file() && !target.exists() {
+                std::fs::copy(entry.path(), target)?;
+            }
+        }
+    }
+    std::fs::rename(&partial, new_state.join(QUEUE_FILE))?;
+    Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::save::tests::{sample, Fixture};
+
+    #[test]
+    fn legacy_queue_is_copied_once_and_left_in_place() {
+        let mut f = Fixture::new();
+        f.write(&sample(1, "Pilot"));
+        f.scan().unwrap();
+        f.queue.set_setting("upload_opt_in", "1").unwrap();
+        std::fs::create_dir_all(f.queue.state.join("Backups")).unwrap();
+        std::fs::write(f.queue.state.join("Backups").join("a.lua"), "backup").unwrap();
+        let new_state = f.dir.path().join("new");
+        assert!(migrate_legacy(&f.queue.state, &new_state).unwrap());
+        let migrated = Queue::open(&new_state).unwrap();
+        assert_eq!(migrated.status().unwrap().observations, 1);
+        assert_eq!(migrated.recent(1).unwrap()[0].digest, f.queue.recent(1).unwrap()[0].digest);
+        assert!(new_state.join("Backups").join("a.lua").is_file());
+        assert!(!migrate_legacy(&f.queue.state, &new_state).unwrap());
+        assert_eq!(f.count(), 1);
+    }
+
+    #[test]
+    fn kinds_since_counts_recent_records() {
+        let mut f = Fixture::new();
+        f.write(
+            &sample(1, "x").replace("[\"kind\"] = \"gossip\",", "[\"kind\"] = \"gossip\", [\"observedAt\"] = 2000,"),
+        );
+        f.scan().unwrap();
+        assert_eq!(f.queue.kinds_since(1000).unwrap(), vec![("gossip".to_string(), 1)]);
+        assert!(f.queue.kinds_since(3000).unwrap().is_empty());
     }
 }

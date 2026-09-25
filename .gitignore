@@ -20,3 +20,5 @@ site-patch/
 
 # Rust build output.
 target/
+node_modules/
+app/src-tauri/gen/

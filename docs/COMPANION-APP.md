@@ -1,6 +1,6 @@
 # RestedRealm Companion: Windows app plan
 
-Status: phase 1 (the Rust core) is built and tested; see [app/README.md](../app/README.md). Phases 2 to 6 are not built yet. Written 25 September 2026 after the owner's decisions below. The current Python companion keeps working until this app replaces it.
+Status: phases 1 (the Rust core) and 2 (the app window, tray and background worker) are built; see [app/README.md](../app/README.md). Phase 2 has not yet run on a Windows PC. Phases 3 to 6 are not built yet. Written 25 September 2026 after the owner's decisions below. The current Python companion keeps working until this app replaces it.
 
 ## Goal
 
@@ -118,7 +118,7 @@ Tauri's own update signature (above) is free and separate. It protects updates w
 ## Phases
 
 1. **Core port. Done 25 September 2026.** Rust core in `app/core` with 20 tests of its own and a parity check that matches the Python version byte for byte on generated saves, ready to run on Windows and Linux by GitHub Actions once `docs/ci/core.yml` is moved to `.github/workflows/`. No window yet. Applying to SignPath Foundation is still to do.
-2. **App shell.** Tauri window in the website look, setup screens, tray icon, start with Windows, settings, import of the existing pilot queue.
+2. **App shell. Built 25 September 2026, not yet run on Windows.** Tauri window in the website look, setup screens, tray icon, start with Windows, settings, "View my data", the background worker with automatic freeing of the addon's space, a basic addon install, and a one-time copy of the pilot queue.
 3. **Account connection.** Website changes for opening pairing, the approval page and the return link. The app side of the same flow.
 4. **Addon handling.** Finding WoW, the website settings file, installing and updating the addon, `CompanionStatus.lua` and the in-game status line.
 5. **Installer and updates.** NSIS installer with the launch checkbox and uninstall choices, the signed updater, the GitHub Actions release job and the download page.

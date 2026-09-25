@@ -1,6 +1,6 @@
 -- RestedRealm Forever collection probe. No gameplay actions or network access.
 local ADDON = ...
-local VERSION = "0.1.13-probe"
+local VERSION = "0.1.14"
 local IDENTITY_SCHEMA = 2
 local MAX_RECORDS = 1500
 local MAX_TEXT = 8192
@@ -1161,11 +1161,13 @@ local function command(value)
     value = string.lower(text(value, 100) or "")
     if value == "on" then
         db.enabled = true
+        db.collectionChoice = "on"
         message("collection on. Use /rrc off to pause it.")
         scheduleQuestScan()
     elseif value == "off" then
         db.enabled = false
-        message("collection paused. Saved observations remain on this PC.")
+        db.collectionChoice = "off"
+        message("collection paused. Saved observations remain on this PC. Use /rrc on to resume.")
     elseif value == "text on" then
         db.captureText = true
         message("full visible NPC and quest text will be saved locally.")
@@ -1389,12 +1391,16 @@ frame:SetScript("OnEvent", function(_, event, ...)
             db.sightingCount = 0
             for _ in pairs(db.sightingKeys) do db.sightingCount = db.sightingCount + 1 end
         end
-        if type(db.enabled) ~= "boolean" then db.enabled = false end
+        -- On unless the player chose /rrc off. Consent to uploading is given in
+        -- RestedRealm Companion's setup; the addon only notes things locally.
+        -- Saves from before 0.1.14 stored "off" as a default rather than a
+        -- choice, so they switch on once.
+        db.enabled = db.collectionChoice ~= "off"
         if type(db.captureText) ~= "boolean" then db.captureText = true end
         SLASH_RESTEDREALMCOLLECTOR1 = "/rrc"
         SlashCmdList.RESTEDREALMCOLLECTOR = command
-        if db.enabled then message("active; /rrc status shows saved observations.")
-        else message("ready; type /rrc on to opt in.") end
+        if db.enabled then message("active; /rrc status shows saved observations, /rrc off pauses it.")
+        else message("paused; type /rrc on to resume.") end
         return
     end
     if not db or not db.enabled then return end

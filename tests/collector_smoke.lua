@@ -70,10 +70,18 @@ RestedRealmCollectorDB = { records = { {
 } }, nextSeq = 1 }
 assert(loadfile(addonFile))("RestedRealmCollector")
 frame.callback(frame, "ADDON_LOADED", "RestedRealmCollector")
-assert(RestedRealmCollectorDB.enabled == false)
+-- On by default; a save from before 0.1.14 has no recorded choice and switches on.
+assert(RestedRealmCollectorDB.enabled == true)
 assert(RestedRealmCollectorDB.records[1].data.npc.id == nil)
 assert(RestedRealmCollectorDB.records[1].data.items[1].sourceID == nil)
+-- "/rrc off" is remembered as the player's choice and stops recording.
+SlashCmdList.RESTEDREALMCOLLECTOR("off")
+assert(RestedRealmCollectorDB.enabled == false and RestedRealmCollectorDB.collectionChoice == "off")
+local before = #RestedRealmCollectorDB.records
+frame.callback(frame, "MERCHANT_SHOW")
+assert(#RestedRealmCollectorDB.records == before)
 SlashCmdList.RESTEDREALMCOLLECTOR("on")
+assert(RestedRealmCollectorDB.collectionChoice == "on")
 frame.callback(frame, "MERCHANT_SHOW")
 local first = RestedRealmCollectorDB.records[2]
 assert(first and first.kind == "merchant")

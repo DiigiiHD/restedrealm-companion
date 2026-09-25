@@ -17,3 +17,9 @@ qa/
 
 # Historical partial copy of the website. The website repository owns these files.
 site-patch/
+
+# Rust build output.
+target/
+node_modules/
+app/src-tauri/gen/
+app/src-tauri/tauri.release.conf.json

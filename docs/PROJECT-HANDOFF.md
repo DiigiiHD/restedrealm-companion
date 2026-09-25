@@ -34,6 +34,7 @@ The website's current claim extractor covers only `quest_objectives` reward choi
 | Addon capture | `addon/RestedRealmCollector/Collector.lua`, `.toc` | `tests/collector_smoke.lua` with a Lua runtime; then an actual Forever session and `/rrc status` |
 | Companion import and queue | `companion/restedrealm_companion.py`, `save_parser.py`, `gui.py` | `python -m unittest discover -s tests -p 'test_*.py' -v` |
 | Pairing and upload | `companion/uploader.py`, `windows_credentials.py`, `UPLOAD-CONTRACT.md` | Mock transport tests, then a clearly labeled synthetic batch and duplicate retry before a new deployment is trusted |
+| Windows app core (Rust) | `app/core/src/*.rs`, `app/README.md` | `cargo fmt --check`, `cargo clippy`, `cargo test` in `app/`, then `python tests/parity_check.py` |
 | Website intake | `/opt/restedrealm/src/server/collector.ts`, `src/app/api/collector/`, migrations 054 and 055 | TypeScript, production build, isolated database integration tests, account isolation and browser checks |
 | Public evidence | `/opt/restedrealm/src/lib/collector-claim-rules.ts`, `src/server/collector-claims.ts`, `src/app/quests/[id]/page.tsx`, `docs/COLLECTOR-EVIDENCE-POLICY.md` | Conflict, distinct account, build rollover, deletion cascade and desktop/phone rendering checks |
 
@@ -47,8 +48,8 @@ Blizzard's [EULA](https://www.blizzard.com/en-us/legal/08b946df-660a-40e4-a072-1
 
 ## Next work
 
-1. Decide the source license before inviting outside contributors. The source repository is public, but the local queue, game saves, credentials, backups and staging screenshots must remain private.
-2. If the owner wants unattended uploads after each save, have them enable the companion's automatic upload checkbox. It is presently off.
+1. The source is MIT licensed (see [LICENSE](../LICENSE), added 25 September 2026). The license covers this project's code only, not Blizzard game content or data. The local queue, game saves, credentials, backups and staging screenshots must remain private.
+2. Finish the Windows app in `app/` (see [COMPANION-APP.md](COMPANION-APP.md) for status): publish the first release ([RELEASING.md](RELEASING.md)), then Battle.net discovery, the website settings file and the in-game status line. The Python prototype in `companion/` is kept as the reference and should not run next to the app.
 3. Verify new Forever builds and addon API changes with a real session. Keep build and character context attached to every observation.
 4. Add reviewer decisions, a conflict queue, catalog validation and explicit publication rules for more claim types before expanding automatic website updates.
 5. Complete privacy and content-rights review before public contributor onboarding or publishing full game dialogue. Add contributor credit only after explicit opt-in.

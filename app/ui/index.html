@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RestedRealm Companion</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img src="img/emblem.png" alt="" width="40" height="40">
+      <div>
+        <span class="brand-name">RestedRealm</span>
+        <span class="brand-sub">Companion</span>
+      </div>
+    </div>
+    <nav class="tabs" aria-label="Sections" hidden>
+      <button type="button" data-view="home" aria-current="page">Home</button>
+      <button type="button" data-view="data">My data</button>
+      <button type="button" data-view="settings">Settings</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Setup: one step per screen. -->
+    <section id="setup" hidden>
+      <ol class="steps" aria-label="Setup steps">
+        <li data-step="game">Game</li>
+        <li data-step="addon">Addon</li>
+        <li data-step="account">Account</li>
+        <li data-step="uploads">Uploads</li>
+        <li data-step="done">Done</li>
+      </ol>
+
+      <div class="step" data-step="game" hidden>
+        <p class="eyebrow">Step 1 of 5</p>
+        <h1>Find World of Warcraft</h1>
+        <p class="lead">The companion reads the RestedRealm addon's save in your World of Warcraft: Forever folder.</p>
+        <div class="panel">
+          <p class="found" id="game-found"></p>
+          <div class="actions">
+            <button type="button" class="button outline" id="game-browse">Choose a folder</button>
+            <button type="button" class="button" id="game-next" disabled>Continue</button>
+          </div>
+          <p class="error" id="game-error" role="alert"></p>
+        </div>
+      </div>
+
+      <div class="step" data-step="addon" hidden>
+        <p class="eyebrow">Step 2 of 5</p>
+        <h1>Install the addon</h1>
+        <p class="lead">The addon notes what you see while you play: quests, characters, merchants and more. It shows nothing on screen and never slows the game.</p>
+        <div class="panel">
+          <p class="found" id="addon-found"></p>
+          <p class="note" id="addon-running" hidden>World of Warcraft is open. After installing, type <kbd>/reload</kbd> in game or restart it.</p>
+          <div class="actions">
+            <button type="button" class="button outline" data-back>Back</button>
+            <button type="button" class="button" id="addon-install">Install the addon</button>
+            <button type="button" class="button" id="addon-next" hidden>Continue</button>
+          </div>
+          <p class="error" id="addon-error" role="alert"></p>
+        </div>
+      </div>
+
+      <div class="step" data-step="account" hidden>
+        <p class="eyebrow">Step 3 of 5</p>
+        <h1>Connect your account</h1>
+        <p class="lead">Connect this PC to your RestedRealm account, so your uploads count for you. It takes one click in your browser.</p>
+        <div class="panel" id="account-form">
+          <div id="connect-start">
+            <p>Choose <strong>Connect</strong>. Your browser opens restedrealm.com, where you sign in with Discord if needed and confirm. This window updates by itself.</p>
+            <div class="actions">
+              <button type="button" class="button outline" data-back>Back</button>
+              <button type="button" class="button" id="connect-browser">Connect</button>
+            </div>
+          </div>
+          <p class="note" id="connect-waiting" role="status" hidden>Finish in your browser. When you confirm there, allow it to open RestedRealm Companion.</p>
+          <p class="error" id="account-error" role="alert"></p>
+          <details class="code-fallback" id="code-fallback">
+            <summary>Use a code instead</summary>
+            <p class="small">On restedrealm.com, open <button type="button" class="link" data-open="account">your companion page</button>, choose <strong>Create a code</strong> and enter it here within five minutes.</p>
+            <label class="field" for="code">Connection code</label>
+            <div class="code-row">
+              <input id="code" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="16" placeholder="16 characters">
+              <button type="button" class="button" id="code-connect" disabled>Connect</button>
+            </div>
+          </details>
+        </div>
+        <div class="panel" id="account-done" hidden>
+          <p class="found ok">This PC is connected to your RestedRealm account.</p>
+          <div class="actions">
+            <button type="button" class="button outline" data-back>Back</button>
+            <button type="button" class="button" data-next>Continue</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="step" data-step="uploads" hidden>
+        <p class="eyebrow">Step 4 of 5</p>
+        <h1>What gets sent</h1>
+        <div class="columns">
+          <div class="panel">
+            <h2>Sent to RestedRealm</h2>
+            <ul class="ticks">
+              <li>What you meet in the world: quests, creatures, items, merchants and trainers, with their IDs, names, rewards and prices</li>
+              <li>Where and when: the zone, map position and time of each record</li>
+              <li>Your character's realm, race, class, faction and level, never its name</li>
+              <li>The game version and language, and private IDs so repeated uploads count once</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h2>Stays on this PC</h2>
+            <ul class="ticks muted-ticks">
+              <li>Full quest text and character dialogue</li>
+              <li>Your character's name and other players</li>
+              <li>Your Battle.net and Discord login details</li>
+              <li>Anything from other addons, chat or the game's memory</li>
+            </ul>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="toggle-row">
+            <div>
+              <p class="toggle-title" id="auto-label">Upload automatically</p>
+              <p class="toggle-help">After you log out, quit or type <kbd>/reload</kbd>. You can turn this off at any time in Settings.</p>
+            </div>
+            <button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="auto-label" id="setup-auto"></button>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <p class="toggle-title" id="start-label">Start with Windows</p>
+              <p class="toggle-help">The companion waits quietly next to the clock.</p>
+            </div>
+            <button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="start-label" id="setup-start"></button>
+          </div>
+          <p class="small">Read the <button type="button" class="link" data-open="privacy">privacy page</button> for how RestedRealm keeps and deletes this data.</p>
+          <div class="actions">
+            <button type="button" class="button outline" data-back>Back</button>
+            <button type="button" class="button" id="uploads-next">Continue</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="step" data-step="done" hidden>
+        <p class="eyebrow">Step 5 of 5</p>
+        <h1>You're all set</h1>
+        <p class="lead">Play as usual. Your data uploads after you log out, quit or type <kbd>/reload</kbd>, because that is when the game saves it.</p>
+        <div class="panel">
+          <p>Closing this window keeps the companion running next to the Windows clock. Click its icon there to open it again.</p>
+          <div class="actions">
+            <button type="button" class="button" id="setup-finish">Open the companion</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Home -->
+    <section id="home" hidden>
+      <div class="hero panel">
+        <div class="hero-state">
+          <span class="dot" id="state-dot"></span>
+          <div>
+            <h1 id="state-title" aria-live="polite">Checking</h1>
+            <p class="lead" id="state-detail"></p>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" class="button outline" data-open="account">Open RestedRealm</button>
+          <button type="button" class="button" id="sync">Upload now</button>
+        </div>
+      </div>
+      <p class="error panel-error" id="home-error" role="alert" hidden></p>
+      <h2 class="section-title">Recorded this week</h2>
+      <div class="tiles" id="week"></div>
+      <p class="small" id="week-empty" hidden>Nothing recorded in the last seven days. Play with the addon enabled, then log out or type <kbd>/reload</kbd>.</p>
+      <p class="small" id="totals"></p>
+    </section>
+
+    <!-- My data -->
+    <section id="data" hidden>
+      <h1>My data</h1>
+      <p class="lead">The newest records on this PC. Open one to see exactly what is sent to RestedRealm. Full quest text and dialogue stay on this PC.</p>
+      <ul class="records" id="records"></ul>
+      <p class="small" id="records-empty" hidden>No records yet.</p>
+    </section>
+
+    <!-- Settings -->
+    <section id="settings" hidden>
+      <h1>Settings</h1>
+      <div class="panel">
+        <div class="toggle-row">
+          <div>
+            <p class="toggle-title" id="set-auto-label">Upload automatically</p>
+            <p class="toggle-help">After you log out, quit or type <kbd>/reload</kbd>.</p>
+          </div>
+          <button type="button" class="switch" role="switch" aria-checked="false" aria-labelledby="set-auto-label" id="set-auto"></button>
+        </div>
+        <div class="toggle-row">
+          <div>
+            <p class="toggle-title" id="set-start-label">Start with Windows</p>
+            <p class="toggle-help">Waits quietly next to the clock.</p>
+          </div>
+          <button type="button" class="switch" role="switch" aria-checked="false" aria-labelledby="set-start-label" id="set-start"></button>
+        </div>
+      </div>
+      <div class="panel rows">
+        <div class="row">
+          <div>
+            <p class="toggle-title">Game folder</p>
+            <p class="toggle-help path" id="set-game"></p>
+          </div>
+          <button type="button" class="button small outline" id="set-game-change">Change</button>
+        </div>
+        <div class="row">
+          <div>
+            <p class="toggle-title">Addon</p>
+            <p class="toggle-help" id="set-addon"></p>
+          </div>
+          <button type="button" class="button small outline" id="set-addon-install">Reinstall</button>
+        </div>
+        <div class="row">
+          <div>
+            <p class="toggle-title">App version</p>
+            <p class="toggle-help" id="set-version" aria-live="polite"></p>
+          </div>
+          <button type="button" class="button small outline" id="set-update">Check for updates</button>
+        </div>
+        <div class="row">
+          <div>
+            <p class="toggle-title">RestedRealm account</p>
+            <p class="toggle-help" id="set-account"></p>
+          </div>
+          <button type="button" class="button small outline" id="set-account-action"></button>
+        </div>
+        <div class="row">
+          <div>
+            <p class="toggle-title">Local data</p>
+            <p class="toggle-help">Deletes the records kept on this PC. Your game save and your RestedRealm account are not changed. Uploads are switched off until you turn them back on.</p>
+          </div>
+          <button type="button" class="button small danger" id="set-forget">Delete local data</button>
+        </div>
+      </div>
+      <p class="error" id="settings-error" role="alert"></p>
+      <p class="small about">RestedRealm Companion <span id="version"></span>. Free and open source under the MIT License. Not made or endorsed by Blizzard Entertainment. <button type="button" class="link" data-open="privacy">Privacy</button></p>
+    </section>
+  </main>
+</body>
+</html>

@@ -101,7 +101,7 @@ Tauri's own update signature (above) is free and separate. It protects updates w
 - Automatic upload on by default is acceptable only because connecting is a deliberate act and the setup screen says plainly what is sent before it happens. The switch must stay one click away in Settings. This is a product decision, not legal advice.
 - The website needs a privacy page covering the companion: what is collected, what is uploaded, retention (90 days for raw observations), account export and deletion, and device removal. It belongs in the website's `docs/BEFORE-LAUNCH.md`.
 - The app reads only the addon's own save file and the game's version files. No game memory, network traffic, other addons, chat or credentials, as today.
-- Full NPC and quest text stays local until the content-rights review decides otherwise, as today.
+- Quest text, objectives and NPC dialogue are uploaded with the player's name, race and class replaced by placeholders in the game itself (addon 0.1.15, app 0.2.2). The site shows quest text as Blizzard's content once two players agree on the words (owner decision, 25 September 2026). Text saved by older addon versions still holds the name and stays local.
 - Supporting the website happens on the website. The app and addon ask for nothing.
 
 ## Website work (in the `restedrealm` repository)

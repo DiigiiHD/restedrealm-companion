@@ -16,7 +16,7 @@ The Rust core that the app will run on. It ports the Python companion in [`compa
 | `canon.rs` | Canonical JSON and SHA-256 digests. |
 | `save.rs` | Settled-file reads, transactional import, validation, and freeing the addon's space with a backup. |
 | `queue.rs` | The local SQLite queue, status, settings and forgetting. |
-| `upload.rs` | Prose redaction, batching, HTTPS without redirects, pairing, and acknowledging records only after a complete answer. |
+| `upload.rs` | What travels (text only from records the addon sanitized, `textSchema` 1), batching, HTTPS without redirects, pairing, and acknowledging records only after a complete answer. |
 | `credentials.rs` | Windows Credential Manager, plus an in-memory store for tests. |
 | `game.rs` | Finding each account's save, and whether WoW is running. |
 

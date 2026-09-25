@@ -19,7 +19,7 @@ const TICK: Duration = Duration::from_secs(5 * 60);
 /// Wait for the game to finish writing before reading.
 const SETTLE: Duration = Duration::from_secs(3);
 /// Only rewrite the game's save once this many records are safely queued, so
-/// the file is touched rarely. The addon stops recording at 1,500.
+/// the file is touched rarely. The addon stops recording at 5,000.
 pub const ROLLOVER_AT: i64 = 200;
 
 pub fn now() -> i64 {

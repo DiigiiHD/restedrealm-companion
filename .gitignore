@@ -23,3 +23,6 @@ target/
 node_modules/
 app/src-tauri/gen/
 app/src-tauri/tauri.release.conf.json
+
+# Screenshots written by tests/ui-screens.mjs.
+companion-shots/

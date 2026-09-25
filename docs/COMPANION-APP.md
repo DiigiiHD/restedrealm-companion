@@ -45,7 +45,7 @@ The data path, trust boundary and upload contract in [PROJECT-HANDOFF.md](PROJEC
 - **Tauri plugins** already cover the Windows parts: `single-instance` (one copy running), `autostart` (start with Windows), a tray icon, `deep-link` (the website handing control back), `updater` (signed updates) and the NSIS installer bundler (install wizard, Programs and Features entry, uninstaller).
 - **Credential** stays in Windows Credential Manager, as now.
 - **Watching** uses Windows file-change notifications instead of checking every 30 seconds, then waits for the file to settle as the current code does. Idle CPU should be close to zero.
-- **Automatic rollover.** When WoW is fully closed and every record is safely in the queue, the app frees the addon's 1,500-record space by itself, keeping the private backup it keeps today. The player no longer presses "Free addon space".
+- **Automatic rollover.** When WoW is fully closed and every record is safely in the queue, the app frees the addon's 5,000-record space by itself, keeping the private backup it keeps today. The player no longer presses "Free addon space".
 - **Existing pilot data.** On first launch the app imports the current Python companion's queue from `%LOCALAPPDATA%\RestedRealmCollector\Companion\queue.sqlite3` so no record or sequence is lost.
 - **Logs.** A small rotating local log file, with a "Copy diagnostics" button for support that leaves out the credential and any game text.
 

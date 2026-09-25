@@ -47,7 +47,7 @@ Blizzard's [EULA](https://www.blizzard.com/en-us/legal/08b946df-660a-40e4-a072-1
 
 ## Next work
 
-1. Decide the source license before inviting outside contributors. The source repository is public, but the local queue, game saves, credentials, backups and staging screenshots must remain private.
+1. The source is MIT licensed (see [LICENSE](../LICENSE), added 25 September 2026). The license covers this project's code only, not Blizzard game content or data. The local queue, game saves, credentials, backups and staging screenshots must remain private.
 2. If the owner wants unattended uploads after each save, have them enable the companion's automatic upload checkbox. It is presently off.
 3. Verify new Forever builds and addon API changes with a real session. Keep build and character context attached to every observation.
 4. Add reviewer decisions, a conflict queue, catalog validation and explicit publication rules for more claim types before expanding automatic website updates.

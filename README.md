@@ -2,6 +2,8 @@
 
 Start with [the project handoff](docs/PROJECT-HANDOFF.md) for current architecture, deployment state, Blizzard policy and next work. Coding agents should also read [AGENTS.md](AGENTS.md).
 
+Source repository: [DiigiiHD/restedrealm-companion](https://github.com/DiigiiHD/restedrealm-companion). The website has a separate private [RestedRealm repository](https://github.com/DiigiiHD/restedrealm).
+
 The Forever addon records opted-in observations from normal play. The Windows companion keeps them in a local queue, and the owner can now upload structured observations to RestedRealm after account pairing. Full NPC and quest prose remains local. The site keeps raw account-linked uploads for 90 days and shows only scoped, corroborated quest reward reports automatically.
 
 ## Installed location

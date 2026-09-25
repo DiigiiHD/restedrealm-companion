@@ -6,7 +6,7 @@ Last verified: 25 September 2026. This document is the starting point for anothe
 
 RestedRealm is a World of Warcraft: Forever only fan site. The addon records game events exposed by the Forever UI API during ordinary, opted-in play. The Windows companion imports completed addon SavedVariables saves into an offline SQLite queue and sends selected structured observations to the RestedRealm website after account pairing. It never reads game memory or network traffic. It does not need Discord or Battle.net credentials: the user signs into the website and redeems a short connection code, while the companion stores an upload-only device credential in Windows Credential Manager.
 
-The addon and companion source live here. The website source and migrations live in the separate, private Git repository deployed at `/opt/restedrealm` on the VPS. As of this handoff its Git remote is `git@github-azerothindex:DiigiiHD/azerothindex.git`; the GitHub repository name is a legacy name, independent of the RestedRealm product name. The local `site-patch/` directory is a historical partial staging copy and is ignored by this repo. Edit the website in its own repository and test it in an isolated checkout before deployment.
+The addon and companion source live in the public [restedrealm-companion repository](https://github.com/DiigiiHD/restedrealm-companion). The website source and migrations live in the separate, private [restedrealm repository](https://github.com/DiigiiHD/restedrealm) deployed at `/opt/restedrealm` on the VPS. The local `site-patch/` directory is a historical partial staging copy and is ignored by this repo. Edit the website in its own repository and test it in an isolated checkout before deployment.
 
 ## Current verified state
 
@@ -47,7 +47,7 @@ Blizzard's [EULA](https://www.blizzard.com/en-us/legal/08b946df-660a-40e4-a072-1
 
 ## Next work
 
-1. Decide the public GitHub repository and source license before inviting outside contributors. Do not publish the local queue, game saves, credentials, backups or staging screenshots.
+1. Decide the source license before inviting outside contributors. The source repository is public, but the local queue, game saves, credentials, backups and staging screenshots must remain private.
 2. If the owner wants unattended uploads after each save, have them enable the companion's automatic upload checkbox. It is presently off.
 3. Verify new Forever builds and addon API changes with a real session. Keep build and character context attached to every observation.
 4. Add reviewer decisions, a conflict queue, catalog validation and explicit publication rules for more claim types before expanding automatic website updates.
@@ -55,4 +55,4 @@ Blizzard's [EULA](https://www.blizzard.com/en-us/legal/08b946df-660a-40e4-a072-1
 
 ## Git and naming
 
-This Collector source should be its own repository, proposed name `restedrealm-collector`, so the addon can be publicly inspected without exposing the private website repository. The website GitHub repository can be renamed from `azerothindex` to `restedrealm` separately. A GitHub rename changes the remote URL and may leave redirects, but it does not rename the VPS directory, Docker Compose project, database, service names or internal import identifiers. Change those only as a separate, tested infrastructure task; they are not required for the public brand to be RestedRealm.
+The Collector source is in the public `DiigiiHD/restedrealm-companion` repository, so the addon can be inspected without exposing the private website repository. The website GitHub repository is named `DiigiiHD/restedrealm`. That rename does not rename the VPS directory, Docker Compose project, database, service names or internal import identifiers. Change those only as a separate, tested infrastructure task; they are not required for the public brand to be RestedRealm.

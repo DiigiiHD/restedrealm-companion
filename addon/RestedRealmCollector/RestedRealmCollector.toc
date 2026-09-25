@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: RestedRealm Collector
-## Notes: Records opted-in Forever world observations for later review and upload.
+## Notes: Records Forever world observations for RestedRealm Companion. /rrc off pauses it.
 ## Author: RestedRealm
-## Version: 0.1.13-probe
+## Version: 0.1.14
 ## SavedVariables: RestedRealmCollectorDB
 
 Collector.lua

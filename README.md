@@ -4,7 +4,7 @@ Start with [the project handoff](docs/PROJECT-HANDOFF.md) for current architectu
 
 Source repository: [DiigiiHD/restedrealm-companion](https://github.com/DiigiiHD/restedrealm-companion). The website has a separate private [RestedRealm repository](https://github.com/DiigiiHD/restedrealm).
 
-The Forever addon records opted-in observations from normal play. The Windows companion keeps them in a local queue, and the owner can now upload structured observations to RestedRealm after account pairing. Full NPC and quest prose remains local. The site keeps raw account-linked uploads for 90 days and shows only scoped, corroborated quest reward reports automatically.
+The Forever addon records observations from normal play (on by default since 0.1.14; `/rrc off` pauses it). The Windows companion keeps them in a local queue, and the owner can now upload structured observations to RestedRealm after account pairing. Full NPC and quest prose remains local. The site keeps raw account-linked uploads for 90 days and shows only scoped, corroborated quest reward reports automatically.
 
 ## Installed location
 
@@ -16,7 +16,7 @@ Source files are in `addon/RestedRealmCollector/`. The addon uses Forever interf
 
 1. Start or restart Forever. Check that **RestedRealm Collector** appears in the AddOns list.
 2. Type `/rrc status`. It should say collection is off.
-3. Type `/rrc on` to opt in. Visible NPC and quest text is saved locally by default after opt-in. Use `/rrc text off` if you want only IDs and short labels.
+3. Collection is on from the first login (since 0.1.14). Type `/rrc off` to pause it and `/rrc on` to resume; the choice is remembered. Visible NPC and quest text is saved locally by default and never uploaded. Use `/rrc text off` if you want only IDs and short labels.
 4. Talk to one NPC with gossip, open one vendor, inspect one quest and open one loot window. Normal interaction only; the addon never clicks or plays for you.
 5. Type `/rrc status` to check the saved count. Log out normally or type `/reload` to make the game save the data. Check `WTF\Account\<account>\SavedVariables\RestedRealmCollector.lua` under `_classic_beta_` after WoW has completed the save. Do not share the file unreviewed.
 6. Restart Forever and check `/rrc status` again. The count should survive. This is especially important because beta SavedVariables behavior has changed recently.

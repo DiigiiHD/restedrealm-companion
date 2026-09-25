@@ -1,7 +1,10 @@
 -- RestedRealm Forever collection probe. No gameplay actions or network access.
 local ADDON = ...
-local VERSION = "0.1.14"
+local VERSION = "0.1.15"
 local IDENTITY_SCHEMA = 2
+-- 1: player name, race and class in captured text are replaced by <name>,
+-- <race> and <class>. Only records carrying this may upload their text.
+local TEXT_SCHEMA = 1
 local MAX_RECORDS = 1500
 local MAX_TEXT = 8192
 local MAX_ITEMS = 200
@@ -43,8 +46,58 @@ local function text(value, limit)
     return nil
 end
 
+-- The player's own name, race and class, as the game writes them into quest
+-- and NPC text. Nil when the game has not told us the name yet.
+local function playerWords()
+    local name = call(UnitName, "player")
+    if type(name) ~= "string" or #name < 2 then return nil end
+    local race = call(UnitRace, "player")
+    local class = call(UnitClass, "player")
+    return { { "<name>", name }, { "<race>", race }, { "<class>", class } }
+end
+
+local function wordByte(byte)
+    -- Letters, digits and every byte of a multi-byte (accented) character.
+    return byte and (byte >= 128 or (byte >= 48 and byte <= 57)
+        or (byte >= 65 and byte <= 90) or (byte >= 97 and byte <= 122))
+end
+
+-- Replace whole-word, case-insensitive matches of `word` with `placeholder`.
+local function replaceWord(value, word, placeholder)
+    if type(word) ~= "string" or #word < 2 then return value end
+    local lower, target = string.lower(value), string.lower(word)
+    local out, at = {}, 1
+    while true do
+        local first, last = string.find(lower, target, at, true)
+        if not first then break end
+        if not wordByte(string.byte(lower, first - 1)) and not wordByte(string.byte(lower, last + 1)) then
+            out[#out + 1] = string.sub(value, at, first - 1)
+            out[#out + 1] = placeholder
+        else
+            out[#out + 1] = string.sub(value, at, last)
+        end
+        at = last + 1
+    end
+    out[#out + 1] = string.sub(value, at)
+    return table.concat(out)
+end
+
+-- Text is uploaded to RestedRealm, so the player's own details come out first.
+local function sanitize(value)
+    if type(value) ~= "string" or value == "" then return value end
+    local words = playerWords()
+    if not words then return value end
+    local ok, result = pcall(function()
+        local out = value
+        for _, pair in ipairs(words) do out = replaceWord(out, pair[2], pair[1]) end
+        return out
+    end)
+    if ok then return result end
+    return nil
+end
+
 local function longText(data, key, value)
-    data[key] = text(value)
+    data[key] = sanitize(text(value))
     local ok, length = pcall(function()
         if type(value) == "string" then return #value end
     end)
@@ -259,6 +312,7 @@ record = function(kind, data)
         identitySchema = IDENTITY_SCHEMA,
         collectorVersion = VERSION,
         kind = kind,
+        textSchema = playerWords() and TEXT_SCHEMA or nil,
         observedAt = number(observedAt),
         context = context(),
         data = data,
@@ -341,7 +395,7 @@ local function installGossipHooks()
                             and "order_index_zero_based" or "gossip_option_id",
                         optionID = selected and selected.id
                             or (methodName == "SelectOption" and raw or nil),
-                        optionName = selected and selected.name,
+                        optionName = selected and sanitize(text(selected.name, 300)),
                         optionOrderIndex = selected and selected.orderIndex,
                         meaning = "gossip_selection_api_called",
                     })
@@ -373,7 +427,7 @@ local function gossip()
             if type(option) == "table" then
                 data.options[#data.options + 1] = {
                     id = number(option.gossipOptionID),
-                    name = text(option.name, 300),
+                    name = sanitize(text(option.name, 300)),
                     status = number(option.status),
                     orderIndex = number(option.orderIndex),
                     spellID = number(option.spellID),
@@ -1117,7 +1171,7 @@ local function scanQuestObjectives()
                             required = number(objective.numRequired),
                             finished = objective.finished == true,
                         }
-                        if db.captureText then entry.text = text(objective.text, 300) end
+                        if db.captureText then entry.text = sanitize(text(objective.text, 300)) end
                         data.objectives[#data.objectives + 1] = entry
                         fingerprint[#fingerprint + 1] = table.concat({
                             entry.type or "", entry.text or "", tostring(entry.fulfilled),
@@ -1360,7 +1414,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
                             for _, option in ipairs(previousData.options or {}) do
                                 if option.orderIndex == raw then
                                     data.optionID = option.id
-                                    data.optionName = option.name
+                                    data.optionName = sanitize(text(option.name, 300))
                                     data.optionOrderIndex = option.orderIndex
                                     data.selectionArgumentKind = "order_index_zero_based"
                                     break
@@ -1379,6 +1433,13 @@ frame:SetScript("OnEvent", function(_, event, ...)
         if type(db.questFingerprints) ~= "table" then db.questFingerprints = {} end
         if type(db.questRepFingerprints) ~= "table" then db.questRepFingerprints = {} end
         if type(db.questTextFingerprints) ~= "table" then db.questTextFingerprints = {} end
+        -- Text saved before 0.1.15 still holds the player's name and never
+        -- uploads. Forget which quest-log texts were seen, once, so the quests
+        -- in the log are recorded again with the name removed.
+        if db.textSchema ~= TEXT_SCHEMA then
+            db.questTextFingerprints = {}
+            db.textSchema = TEXT_SCHEMA
+        end
         if type(db.recipeFingerprints) ~= "table" then db.recipeFingerprints = {} end
         if type(db.professionFingerprints) ~= "table" then db.professionFingerprints = {} end
         if type(db.sightingKeys) ~= "table" then db.sightingKeys = {} end

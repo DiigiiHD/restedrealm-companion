@@ -299,3 +299,4 @@ main > section { max-width: 820px; margin: 0 auto; }
   .top { padding: 12px 20px; }
   .columns { grid-template-columns: 1fr; }
 }
+.ticks code { font: 12px ui-monospace, Consolas, monospace; color: var(--gold); }

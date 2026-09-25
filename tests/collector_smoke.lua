@@ -155,8 +155,36 @@ C_QuestLog.GetQuestRewardCurrencies = function()
         baseRewardAmount = 7, bonusRewardAmount = 2 } }
 end
 C_QuestInfoSystem = { GetQuestRewardSpells = function() return { 456 } end }
+-- Quest text as the game writes it, with this player's name, race and class in it.
+local realUnitName, realUnitRace, realUnitClass = UnitName, UnitRace, UnitClass
+UnitName = function(unit)
+    if unit == "player" then return "Aerith" end
+    return realUnitName(unit)
+end
+UnitRace = function(unit) if unit == "player" then return "Undead", "Scourge" end end
+UnitClass = function(unit) if unit == "player" then return "Paladin", "PALADIN" end end
+GetQuestText = function()
+    return "Greetings, Aerith! Aerith's courage is known. A young undead paladin like you, " ..
+        "AERITH, must hurry. Aerithas the Wise and Paladins' Hall stay as they are."
+end
+GetObjectiveText = function() return "Bring 5 pelts to Paladin Aerith." end
 frame.callback(frame, "QUEST_DETAIL")
 local detail = RestedRealmCollectorDB.records[#RestedRealmCollectorDB.records]
+assert(detail.textSchema == 1, "records made with a known player carry the text schema")
+assert(detail.data.questText == "Greetings, <name>! <name>'s courage is known. A young <race> <class> like you, " ..
+    "<name>, must hurry. Aerithas the Wise and Paladins' Hall stay as they are.", detail.data.questText)
+assert(detail.data.objectiveText == "Bring 5 pelts to <class> <name>.")
+-- An accented name is matched as a whole word too.
+UnitName = function(unit) if unit == "player" then return "Zoë" end return realUnitName(unit) end
+GetQuestText = function() return "Well met, Zoë. Zoëlle is someone else." end
+frame.callback(frame, "QUEST_DETAIL")
+detail = RestedRealmCollectorDB.records[#RestedRealmCollectorDB.records]
+assert(detail.data.questText == "Well met, <name>. Zoëlle is someone else.", detail.data.questText)
+UnitName, UnitRace, UnitClass = realUnitName, realUnitRace, realUnitClass
+GetQuestText, GetObjectiveText = nil, nil
+frame.callback(frame, "QUEST_DETAIL")
+detail = RestedRealmCollectorDB.records[#RestedRealmCollectorDB.records]
+assert(detail.textSchema == nil, "without a known player name the text is not marked as sanitized")
 assert(detail.kind == "quest" and detail.data.id == 375)
 assert(detail.data.level == 8)
 assert(detail.data.items[1].id == 2876 and detail.data.items[1].type == "required")

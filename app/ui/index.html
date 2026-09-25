@@ -107,13 +107,14 @@
               <li>What you meet in the world: quests, creatures, items, merchants and trainers, with their IDs, names, rewards and prices</li>
               <li>Where and when: the zone, map position and time of each record</li>
               <li>Your character's realm, race, class, faction and level, never its name</li>
+              <li>Quest text and NPC dialogue, with your character's name, race and class replaced by <code>&lt;name&gt;</code>, <code>&lt;race&gt;</code> and <code>&lt;class&gt;</code></li>
               <li>The game version and language, and private IDs so repeated uploads count once</li>
             </ul>
           </div>
           <div class="panel">
             <h2>Stays on this PC</h2>
             <ul class="ticks muted-ticks">
-              <li>Full quest text and character dialogue</li>
+              <li>Text saved before version 0.2.2, which still had your character's name in it</li>
               <li>Your character's name and other players</li>
               <li>Your Battle.net and Discord login details</li>
               <li>Anything from other addons, chat or the game's memory</li>
@@ -181,7 +182,7 @@
     <!-- My data -->
     <section id="data" hidden>
       <h1>My data</h1>
-      <p class="lead">The newest records on this PC. Open one to see exactly what is sent to RestedRealm. Full quest text and dialogue stay on this PC.</p>
+      <p class="lead">The newest records on this PC. Open one to see exactly what is sent to RestedRealm. Quest text and dialogue are sent with your character's name, race and class replaced.</p>
       <ul class="records" id="records"></ul>
       <p class="small" id="records-empty" hidden>No records yet.</p>
     </section>

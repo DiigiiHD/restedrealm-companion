@@ -1,6 +1,8 @@
-//! Pairing and upload. Full NPC and quest prose stays in the local queue; only
-//! the redacted record travels. A record counts as uploaded only after the
-//! website confirms the whole batch.
+//! Pairing and upload. A record's text (quest text, NPC dialogue, objectives)
+//! travels only when the addon marked it sanitized (`textSchema` 1: the
+//! player's name, race and class already replaced). Older records keep their
+//! text on this PC. A record counts as uploaded only after the website
+//! confirms the whole batch.
 
 use crate::canon::{json_to_canonical, sha256_hex, write_string};
 use crate::credentials::{Credential, CredentialStore};
@@ -25,32 +27,47 @@ pub const PROSE_FIELDS: &[&str] = &[
     "text",
     "optionName",
 ];
+/// Never uploaded, sanitized or not: raw tooltip lines are only a local probe.
+pub const LOCAL_ONLY_FIELDS: &[&str] = &["tooltipProbe"];
+/// The addon marks records whose text had the player's details replaced.
+pub const SANITIZED_TEXT_SCHEMA: i64 = 1;
 const MAX_TEXT_CHARS: usize = 500;
+/// Sanitized quest text and dialogue can be long; the addon keeps up to 8,192.
+const MAX_PROSE_CHARS: usize = 8192;
 const MAX_RECORD_CHARS: usize = 100_000;
 const MAX_BATCH_BYTES: usize = 1_000_000;
 const MAX_RESPONSE_BYTES: u64 = 1_048_577;
 
-/// Drop prose fields, option names and any string over 500 characters.
+/// What travels for one record. With sanitized text: everything but the local
+/// probe, text up to 8,192 characters. Otherwise the old rule: no prose fields,
+/// no option names and no string over 500 characters.
 pub fn redact(value: &Json) -> Json {
-    redact_inner(value, false).unwrap_or(Json::Null)
+    let sanitized = value.get("textSchema").and_then(Json::as_i64) == Some(SANITIZED_TEXT_SCHEMA);
+    redact_inner(value, false, false, sanitized).unwrap_or(Json::Null)
 }
 
-fn redact_inner(value: &Json, under_options: bool) -> Option<Json> {
+fn redact_inner(value: &Json, under_options: bool, prose: bool, sanitized: bool) -> Option<Json> {
     match value {
         Json::Object(map) => {
             let mut out = serde_json::Map::new();
             for (key, item) in map {
-                if PROSE_FIELDS.contains(&key.as_str()) || (key == "name" && under_options) {
+                let is_prose = PROSE_FIELDS.contains(&key.as_str()) || (key == "name" && under_options);
+                if LOCAL_ONLY_FIELDS.contains(&key.as_str()) || (is_prose && !sanitized) {
                     continue;
                 }
-                if let Some(cleaned) = redact_inner(item, under_options || key == "options") {
+                if let Some(cleaned) = redact_inner(item, under_options || key == "options", is_prose, sanitized) {
                     out.insert(key.clone(), cleaned);
                 }
             }
             Some(Json::Object(out))
         }
-        Json::Array(items) => Some(Json::Array(items.iter().filter_map(|i| redact_inner(i, under_options)).collect())),
-        Json::String(s) if s.chars().count() > MAX_TEXT_CHARS => None,
+        Json::Array(items) => {
+            Some(Json::Array(items.iter().filter_map(|i| redact_inner(i, under_options, prose, sanitized)).collect()))
+        }
+        Json::String(s) => {
+            let limit = if prose { MAX_PROSE_CHARS } else { MAX_TEXT_CHARS };
+            (s.chars().count() <= limit).then(|| Json::String(s.clone()))
+        }
         other => Some(other.clone()),
     }
 }
@@ -399,6 +416,36 @@ mod tests {
         assert_eq!(sent["data"]["options"][0]["id"], 4);
         assert!(sent["data"].get("long").is_none());
         assert_eq!(sent["data"]["title"], "t");
+    }
+
+    #[test]
+    fn sanitized_text_travels_and_older_text_stays_local() {
+        let record = |schema: Option<i64>| {
+            let mut r = serde_json::json!({
+                "seq": 1, "kind": "quest",
+                "data": {"id": 426, "questText": "Greetings, <name>.", "objectiveText": "x".repeat(900),
+                         "tooltipProbe": {"private": ["line"]}, "options": [{"id": 4, "name": "Tell me more"}],
+                         "label": "y".repeat(600)},
+            });
+            if let Some(schema) = schema {
+                r["textSchema"] = serde_json::json!(schema);
+            }
+            r
+        };
+        let sent = redact(&record(Some(1)));
+        assert_eq!(sent["data"]["questText"], "Greetings, <name>.");
+        assert_eq!(sent["data"]["objectiveText"].as_str().unwrap().len(), 900);
+        assert_eq!(sent["data"]["options"][0]["name"], "Tell me more");
+        assert!(sent["data"].get("tooltipProbe").is_none());
+        assert!(sent["data"].get("label").is_none(), "other long strings keep the 500 limit");
+        let too_long = redact(&serde_json::json!({"textSchema": 1, "data": {"questText": "z".repeat(8193)}}));
+        assert!(too_long["data"].get("questText").is_none());
+        for older in [record(None), record(Some(0))] {
+            let sent = redact(&older);
+            assert!(sent["data"].get("questText").is_none());
+            assert!(sent["data"].get("objectiveText").is_none());
+            assert!(sent["data"]["options"][0].get("name").is_none());
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # RestedRealm Companion: Windows app plan
 
-Status: phases 1 to 3 and the installer part of phase 5 are built; see [app/README.md](../app/README.md). Nothing has run on a Windows PC yet. Addon updates and the status file (phase 4), automatic app updates (phase 5) and the test group (phase 6) are still to do. Written 25 September 2026 after the owner's decisions below. The current Python companion keeps working until this app replaces it.
+Status: phases 1 to 3 and 5 are built, plus addon updates from phase 4; see [app/README.md](../app/README.md). The website side is live. A test build has been installed and uploads confirmed on the owner's PC. Still to do: Battle.net discovery, the website settings file and the in-game status line (phase 4), code signing, and the test group (phase 6). How releases and updates work: [RELEASING.md](RELEASING.md). Written 25 September 2026 after the owner's decisions below. The current Python companion keeps working until this app replaces it.
 
 ## Goal
 
@@ -121,7 +121,7 @@ Tauri's own update signature (above) is free and separate. It protects updates w
 2. **App shell. Built 25 September 2026, not yet run on Windows.** Tauri window in the website look, setup screens, tray icon, start with Windows, settings, "View my data", the background worker with automatic freeing of the addon's space, a basic addon install, and a one-time copy of the pilot queue.
 3. **Account connection. Built 25 September 2026.** The website opens pairing to every signed-in account and has the `/companion/connect` confirm page; the app starts the flow, handles the `restedrealm-companion://` link and accepts only its own state. Checked end to end against a local copy of the website. The website change is not deployed yet.
 4. **Addon handling.** Finding WoW, the website settings file, installing and updating the addon, `CompanionStatus.lua` and the in-game status line.
-5. **Installer and updates. Installer built 25 September 2026; updater not yet.** Per-user NSIS installer with the RestedRealm side image, a launch checkbox, the `restedrealm-companion://` link registered, and an uninstaller that removes start with Windows and, when "Delete the application data" is ticked, the local data and the saved connection. The release workflow is `docs/ci/release.yml`. The signed updater still needs the owner's signing key.
+5. **Installer and updates. Built 25 September 2026.** Per-user NSIS installer with the RestedRealm side image, a launch checkbox, the `restedrealm-companion://` link registered, and an uninstaller that removes start with Windows and, when "Delete the application data" is ticked, the local data and the saved connection. Release builds update themselves from signed GitHub releases (`app/src-tauri/src/updater.rs`); a signed release build with a throwaway key produced its `.sig` file as expected. The owner's one-time key setup and the first release are described in [RELEASING.md](RELEASING.md).
 6. **Test group, then everyone.** A handful of players first, unsigned if signing is not ready, with the owner's PC as the first install. Wider release when updates, uninstall and the Forever-folder switch have been proven on real PCs.
 
 ## Still open

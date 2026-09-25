@@ -36,7 +36,9 @@ pub async fn check_and_install(app: &AppHandle, shared: &Shared) -> Result<Strin
         return Ok("This build does not update itself.".into());
     }
     let updater = app.updater().map_err(|e| e.to_string())?;
-    let Some(update) = updater.check().await.map_err(|_| "Could not check for updates. It tries again later.".to_string())? else {
+    let Some(update) =
+        updater.check().await.map_err(|_| "Could not check for updates. It tries again later.".to_string())?
+    else {
         set(app, shared, None);
         return Ok("You have the newest version.".into());
     };

@@ -33,6 +33,7 @@ The Windows app around the core. It has not yet run on a Windows PC; everything 
 | `src-tauri/src/worker.rs` | Watches the addon's save, imports it, uploads when automatic upload is on, and frees the addon's space once 200 or more records are safely queued and WoW is closed. A five-minute check catches anything the file watcher misses. |
 | `src-tauri/src/commands.rs` | Everything the window may ask for. Each command does one fixed thing; the window cannot open arbitrary URLs or files. |
 | `src-tauri/src/connect.rs` | Connecting through the browser: a random state, the `restedrealm-companion://connect` link, and only the app's own request accepted. |
+| `src-tauri/src/updater.rs` | Release builds check GitHub for a signed newer version a minute after start and every six hours and install it quietly. Builds without the update key never check. |
 | `src-tauri/src/tray.rs` | The icon next to the clock: status, Upload now, Open restedrealm.com, Quit. |
 | `src-tauri/src/addon.rs` | Finds the Forever folder in the usual places and installs the bundled addon. Phase 4 replaces the guesses with Battle.net discovery. |
 | `src-tauri/src/labels.rs` | Plain words for record kinds. |
@@ -54,6 +55,8 @@ npm run dev      # or: cargo run -p restedrealm-companion
 `npm run build` (or `npx tauri build`) on Windows makes `target/release/bundle/nsis/RestedRealm Companion_<version>_x64-setup.exe`: a per-user install with no administrator prompt, the RestedRealm side image (`src-tauri/installer/`), a launch checkbox, a Start menu entry, Programs and Features, and the `restedrealm-companion://` link. `src-tauri/installer/hooks.nsh` removes start with Windows on uninstall (not during an update) and, when "Delete the application data" is ticked, the local data and the saved connection (`--uninstall-cleanup`).
 
 The same installer can be built on Linux for checking with `npx tauri build --target x86_64-pc-windows-gnu --bundles nsis` (needs `mingw-w64` and `nsis`); Tauri calls this experimental, so releases are built on Windows by `docs/ci/release.yml`, which moves to `.github/workflows/` once an account allowed to add workflows pushes it. It is not code signed yet.
+
+Official releases update themselves; the worker then replaces the installed addon when the bundled one is newer and WoW is closed. The one-time key setup and the release steps are in [docs/RELEASING.md](../docs/RELEASING.md).
 
 Development builds can talk to a local website with `RRC_BASE_URL=http://127.0.0.1:3012`; release builds always use restedrealm.com. `rrc-core pair CODE --upload` pairs and uploads in one run.
 

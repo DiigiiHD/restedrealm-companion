@@ -1,12 +1,11 @@
 name: Release RestedRealm Companion
 
-# Push a tag such as v0.2.0 (matching app/Cargo.toml's version) to build the
-# Windows installer and attach it to a draft GitHub Release. Check the draft,
-# then publish it: the download button on restedrealm.com points at the latest
-# published release.
+# Run from Actions > Release RestedRealm Companion > Run workflow. It builds the
+# version in app/Cargo.toml, makes a DRAFT release v<version> with the files,
+# and uploads a fixed-name copy for restedrealm.com's download button. Check
+# the draft, then publish it: apps update only from published releases.
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -29,9 +28,6 @@ jobs:
       - run: npm ci
       - name: Tests before building
         run: cargo test
-      # Official builds update themselves. The public key is a repository
-      # variable and the private key a secret (see docs/RELEASING.md). Without
-      # them a release could never update, so the build stops instead.
       - name: Turn on automatic updates for this build
         shell: bash
         env:
@@ -43,6 +39,10 @@ jobs:
             exit 1
           fi
           printf '{"bundle":{"createUpdaterArtifacts":true},"plugins":{"updater":{"pubkey":"%s"}}}' "$UPDATER_PUBKEY" > src-tauri/tauri.release.conf.json
+      - name: Version from app/Cargo.toml
+        id: version
+        shell: bash
+        run: echo "tag=v$(grep -m1 '^version' Cargo.toml | cut -d '"' -f2)" >> "$GITHUB_OUTPUT"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -50,10 +50,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
-          tagName: ${{ github.ref_name }}
-          releaseName: RestedRealm Companion ${{ github.ref_name }}
+          tagName: ${{ steps.version.outputs.tag }}
+          releaseName: RestedRealm Companion ${{ steps.version.outputs.tag }}
           releaseBody: |
-            Download `RestedRealm Companion_*_x64-setup.exe` below and run it. Windows 10 and 11.
+            Download `RestedRealm-Companion-Setup.exe` below and run it. Windows 10 and 11.
             Already installed? The app updates itself; nothing to do.
 
             The installer is not yet code signed, so Windows may show "Windows protected your PC".
@@ -62,3 +62,10 @@ jobs:
           prerelease: false
           includeUpdaterJson: true
           args: --bundles nsis --config src-tauri/tauri.release.conf.json
+      - name: Fixed-name copy for the website's download button
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp target/release/bundle/nsis/*-setup.exe RestedRealm-Companion-Setup.exe
+          gh release upload "${{ steps.version.outputs.tag }}" RestedRealm-Companion-Setup.exe --clobber --repo "${{ github.repository }}"

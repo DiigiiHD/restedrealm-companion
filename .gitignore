@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+
+# Local observations, game saves, credentials and generated reports.
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.cookie
+*.log
+*.asc
+.env
+.env.*
+SavedVariables/
+Backups/
+WTF/
+qa/
+
+# Historical partial copy of the website. The website repository owns these files.
+site-patch/

@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: RestedRealm Collector
+## Notes: Records opted-in Forever world observations for later review and upload.
+## Author: RestedRealm
+## Version: 0.1.13-probe
+## SavedVariables: RestedRealmCollectorDB
+
+Collector.lua

@@ -4,7 +4,7 @@
 
 use crate::canon::{json_to_canonical, sha256_hex, write_string};
 use crate::credentials::{Credential, CredentialStore};
-use crate::queue::Queue;
+use crate::queue::{Queue, PENDING};
 use crate::{Error, Result};
 use rusqlite::params;
 use serde_json::Value as Json;
@@ -90,11 +90,10 @@ impl Batch {
 
 /// The oldest pending records that fit in one request.
 pub fn prepare_batch(queue: &Queue, limit: i64) -> Result<Batch> {
-    let mut statement = queue.db.prepare(
-        "SELECT source_id,seq,digest,payload FROM observations
-         WHERE uploaded_digest IS NULL OR uploaded_digest<>digest
-         ORDER BY queued_at,source_id,seq LIMIT ?",
-    )?;
+    let mut statement = queue.db.prepare(&format!(
+        "SELECT o.source_id,o.seq,o.digest,o.payload FROM observations o
+         WHERE {PENDING} ORDER BY o.queued_at,o.source_id,o.seq LIMIT ?"
+    ))?;
     let rows = statement
         .query_map([limit.clamp(1, 100)], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))
@@ -143,7 +142,13 @@ impl Https {
 }
 
 impl Default for Https {
+    /// restedrealm.com. Development builds can point at a local site with
+    /// `RRC_BASE_URL`; release builds ignore it.
     fn default() -> Https {
+        #[cfg(debug_assertions)]
+        if let Ok(url) = std::env::var("RRC_BASE_URL") {
+            return Https::new(&url);
+        }
         Https::new(BASE_URL)
     }
 }
@@ -234,16 +239,42 @@ pub fn upload_once(queue: &mut Queue, transport: &dyn Transport, store: &dyn Cre
     }
     let response = transport.post("/api/collector/batches", &batch.body(), Some(&credential.token))?;
     let count = |key: &str| response.get(key).and_then(Json::as_i64);
+    // The website names records it will not store; they are kept here and not sent again.
+    let mut refused: Vec<(String, i64, String)> = Vec::new();
+    if let Some(list) = response.get("rejected").and_then(Json::as_array) {
+        for entry in list {
+            let source = entry.get("sourceId").and_then(Json::as_str).unwrap_or_default();
+            let seq = entry.get("seq").and_then(Json::as_i64).unwrap_or(0);
+            let reason = entry.get("reason").and_then(Json::as_str).unwrap_or("Refused by RestedRealm");
+            if !batch.acknowledged.iter().any(|(s, q, _)| s == source && *q == seq) {
+                return Err(Error::Upload(
+                    "Upload response named a record that was not sent; all observations remain queued".into(),
+                ));
+            }
+            refused.push((source.to_string(), seq, reason.chars().take(200).collect()));
+        }
+    }
     match (count("accepted"), count("duplicate")) {
-        (Some(a), Some(d)) if a >= 0 && d >= 0 && (a + d) as usize == batch.acknowledged.len() => {}
+        (Some(a), Some(d)) if a >= 0 && d >= 0 && (a + d) as usize + refused.len() == batch.acknowledged.len() => {}
         _ => return Err(Error::Upload("Upload response was incomplete; all observations remain queued".into())),
     }
+    let stamp =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
     let tx = queue.db.transaction()?;
     for (source_id, seq, digest) in &batch.acknowledged {
-        tx.execute(
-            "UPDATE observations SET uploaded_digest=? WHERE source_id=? AND seq=? AND digest=?",
-            params![digest, source_id, seq, digest],
-        )?;
+        if let Some((_, _, reason)) = refused.iter().find(|(s, q, _)| s == source_id && q == seq) {
+            tx.execute(
+                "INSERT INTO rejections(source_id,seq,digest,reason,rejected_at) VALUES(?,?,?,?,?)
+                 ON CONFLICT(source_id,seq) DO UPDATE SET digest=excluded.digest, reason=excluded.reason,
+                 rejected_at=excluded.rejected_at",
+                params![source_id, seq, digest, reason, stamp],
+            )?;
+        } else {
+            tx.execute(
+                "UPDATE observations SET uploaded_digest=? WHERE source_id=? AND seq=? AND digest=?",
+                params![digest, source_id, seq, digest],
+            )?;
+        }
     }
     tx.commit()?;
     Ok(batch.acknowledged.len())
@@ -310,6 +341,42 @@ mod tests {
         let ok = Fake::new(|_, _| Ok(serde_json::json!({"accepted": 1, "duplicate": 0})));
         assert_eq!(upload_once(&mut f.queue, &ok, &store).unwrap(), 1);
         assert_eq!(f.queue.status().unwrap().pending, 0);
+    }
+
+    #[test]
+    fn refused_records_are_kept_but_not_resent() {
+        let mut f = Fixture::new();
+        let second = "\n  { [\"seq\"] = 2, [\"kind\"] = \"gossip\", [\"context\"] = { [\"product\"] = \"wow_classic_beta\" }, [\"data\"] = {} },\n },\n}\n";
+        f.write(&sample(1, "First").replace("\n },\n}\n", second));
+        f.scan().unwrap();
+        assert_eq!(f.queue.status().unwrap().pending, 2);
+        let store = paired();
+        let sources: Vec<String> =
+            prepare_batch(&f.queue, 50).unwrap().acknowledged.iter().map(|a| a.0.clone()).collect();
+        let source = sources[0].clone();
+        let answer = serde_json::json!({"accepted": 1, "duplicate": 0,
+            "rejected": [{"sourceId": source, "seq": 2, "reason": "Observation is not a valid Forever record."}]});
+        let ok = Fake::new(move |_, _| Ok(answer.clone()));
+        assert_eq!(upload_once(&mut f.queue, &ok, &store).unwrap(), 2);
+        let status = f.queue.status().unwrap();
+        assert_eq!((status.pending, status.rejected), (0, 1));
+        assert!(prepare_batch(&f.queue, 50).unwrap().acknowledged.is_empty());
+        let rows = f.queue.recent(10).unwrap();
+        assert_eq!(
+            rows.iter().find(|r| r.seq == 2).unwrap().rejected.as_deref(),
+            Some("Observation is not a valid Forever record.")
+        );
+
+        // A response naming a record we did not send is not trusted.
+        f.queue.forget().unwrap();
+        f.scan().unwrap();
+        let wrong = Fake::new(|_, _| {
+            Ok(
+                serde_json::json!({"accepted": 1, "duplicate": 0, "rejected": [{"sourceId": "x", "seq": 9, "reason": "?"}]}),
+            )
+        });
+        assert!(upload_once(&mut f.queue, &wrong, &store).is_err());
+        assert_eq!(f.queue.status().unwrap().pending, 2);
     }
 
     #[test]

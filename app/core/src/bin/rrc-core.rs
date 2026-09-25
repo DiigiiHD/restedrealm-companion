@@ -17,7 +17,7 @@ commands:
   status            show the local queue
   preview [N]       newest N records: kind and date, no text
   batch             print the next upload batch exactly as it would be sent
-  pair CODE         connect this PC with a code from the account page
+  pair CODE [--upload]  connect this PC with a code; --upload sends everything straight after
   upload            send every pending record
   rollover --yes    free the addon's space once WoW is closed
   forget --yes      delete the local queue; the game save is untouched";
@@ -52,6 +52,7 @@ fn run() -> Result<bool, String> {
         return Err(USAGE.into());
     };
     let confirmed = args.iter().any(|a| a == "--yes");
+    let confirmed_upload = args.iter().any(|a| a == "--upload");
     let mut queue = Queue::open(&state).map_err(|e| e.to_string())?;
     match command.as_str() {
         "scan" => {
@@ -86,8 +87,8 @@ fn run() -> Result<bool, String> {
         "status" => {
             let s = queue.status().map_err(|e| e.to_string())?;
             println!(
-                "RestedRealm Companion {}: {} observations on this PC, {} waiting to upload, {} save(s), {} addon drops.",
-                rrc_core::VERSION, s.observations, s.pending, s.sources, s.dropped
+                "RestedRealm Companion {}: {} observations on this PC, {} waiting to upload, {} not accepted, {} save(s), {} addon drops.",
+                rrc_core::VERSION, s.observations, s.pending, s.rejected, s.sources, s.dropped
             );
             Ok(true)
         }
@@ -97,7 +98,13 @@ fn run() -> Result<bool, String> {
                 let record: serde_json::Value = serde_json::from_str(&row.payload).unwrap_or_default();
                 let kind = record.get("kind").and_then(|k| k.as_str()).unwrap_or("?");
                 let when = record.get("observedAt").and_then(|t| t.as_i64()).unwrap_or(0);
-                let sent = if row.uploaded { "uploaded" } else { "waiting" };
+                let sent = if row.rejected.is_some() {
+                    "not accepted"
+                } else if row.uploaded {
+                    "uploaded"
+                } else {
+                    "waiting"
+                };
                 println!("{}  seq {}  {kind}  observedAt {when}  {sent}", &row.digest[..12], row.seq);
             }
             Ok(true)
@@ -109,9 +116,14 @@ fn run() -> Result<bool, String> {
         "pair" => {
             let code = args.get(1).ok_or("pair needs the code from your account page")?;
             let name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows PC".into());
-            let device =
-                redeem_code(&Https::default(), platform_store().as_ref(), code, &name).map_err(|e| e.to_string())?;
+            let store = platform_store();
+            let device = redeem_code(&Https::default(), store.as_ref(), code, &name).map_err(|e| e.to_string())?;
             println!("Connected to RestedRealm as device {device}.");
+            if confirmed_upload {
+                let sent = upload_all(&mut queue, &Https::default(), store.as_ref()).map_err(|e| e.to_string())?;
+                let status = queue.status().map_err(|e| e.to_string())?;
+                println!("Uploaded {sent} observations; {} not accepted by RestedRealm.", status.rejected);
+            }
             Ok(true)
         }
         "upload" => {

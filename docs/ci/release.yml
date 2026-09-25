@@ -1,0 +1,46 @@
+name: Release RestedRealm Companion
+
+# Push a tag such as v0.2.0 (matching app/Cargo.toml's version) to build the
+# Windows installer and attach it to a draft GitHub Release. Check the draft,
+# then publish it: the download button on restedrealm.com points at the latest
+# published release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Tests before building
+        run: cargo test
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: RestedRealm Companion ${{ github.ref_name }}
+          releaseBody: |
+            Download `RestedRealm Companion_*_x64-setup.exe` below and run it. Windows 10 and 11.
+
+            The installer is not yet code signed, so Windows may show "Windows protected your PC".
+            Choose "More info" and then "Run anyway".
+          releaseDraft: true
+          prerelease: false
+          args: --bundles nsis

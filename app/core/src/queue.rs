@@ -7,6 +7,11 @@ use std::path::{Path, PathBuf};
 
 pub const QUEUE_FILE: &str = "queue.sqlite3";
 
+/// A record waiting to upload: this version was neither confirmed nor refused
+/// by the website. A corrected record (new digest) becomes pending again.
+pub const PENDING: &str = "(o.uploaded_digest IS NULL OR o.uploaded_digest<>o.digest)
+    AND NOT EXISTS (SELECT 1 FROM rejections r WHERE r.source_id=o.source_id AND r.seq=o.seq AND r.digest=o.digest)";
+
 pub struct Queue {
     pub db: Connection,
     pub state: PathBuf,
@@ -16,6 +21,8 @@ pub struct Queue {
 pub struct Status {
     pub observations: i64,
     pub pending: i64,
+    /// Records the website refused; they are kept here but not sent again.
+    pub rejected: i64,
     pub sources: i64,
     pub last_import: Option<i64>,
     pub dropped: i64,
@@ -28,6 +35,8 @@ pub struct Row {
     pub payload: String,
     pub queued_at: i64,
     pub uploaded: bool,
+    /// Why the website refused this version of the record, if it did.
+    pub rejected: Option<String>,
 }
 
 impl Queue {
@@ -56,7 +65,15 @@ impl Queue {
                 dropped INTEGER NOT NULL,
                 imported_at INTEGER NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+            CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS rejections (
+                source_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                digest TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                rejected_at INTEGER NOT NULL,
+                PRIMARY KEY (source_id, seq)
+            );",
         )?;
         let has_uploaded = db
             .prepare("PRAGMA table_info(observations)")?
@@ -72,8 +89,10 @@ impl Queue {
 
     pub fn status(&self) -> Result<Status> {
         let observations = self.db.query_row("SELECT COUNT(*) FROM observations", [], |r| r.get(0))?;
-        let pending = self.db.query_row(
-            "SELECT COUNT(*) FROM observations WHERE uploaded_digest IS NULL OR uploaded_digest<>digest",
+        let pending =
+            self.db.query_row(&format!("SELECT COUNT(*) FROM observations o WHERE {PENDING}"), [], |r| r.get(0))?;
+        let rejected = self.db.query_row(
+            "SELECT COUNT(*) FROM observations o JOIN rejections r USING (source_id, seq) WHERE r.digest=o.digest",
             [],
             |r| r.get(0),
         )?;
@@ -82,14 +101,17 @@ impl Queue {
             [],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )?;
-        Ok(Status { observations, pending, sources, last_import: (last > 0).then_some(last), dropped })
+        Ok(Status { observations, pending, rejected, sources, last_import: (last > 0).then_some(last), dropped })
     }
 
     /// Newest first, for the "View my data" screen.
     pub fn recent(&self, limit: i64) -> Result<Vec<Row>> {
         let mut statement = self.db.prepare(
-            "SELECT seq, digest, payload, queued_at, uploaded_digest IS NOT NULL AND uploaded_digest=digest
-             FROM observations ORDER BY queued_at DESC, seq DESC LIMIT ?",
+            "SELECT o.seq, o.digest, o.payload, o.queued_at,
+                    o.uploaded_digest IS NOT NULL AND o.uploaded_digest=o.digest,
+                    CASE WHEN r.digest=o.digest THEN r.reason END
+             FROM observations o LEFT JOIN rejections r USING (source_id, seq)
+             ORDER BY o.queued_at DESC, o.seq DESC LIMIT ?",
         )?;
         let rows = statement
             .query_map([limit.clamp(1, 1000)], |r| {
@@ -99,10 +121,22 @@ impl Queue {
                     payload: r.get(2)?,
                     queued_at: r.get(3)?,
                     uploaded: r.get(4)?,
+                    rejected: r.get(5)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
+    }
+
+    /// Remember that the website refused this version of a record.
+    pub fn mark_rejected(&self, source_id: &str, seq: i64, digest: &str, reason: &str, at: i64) -> Result<()> {
+        self.db.execute(
+            "INSERT INTO rejections(source_id,seq,digest,reason,rejected_at) VALUES(?,?,?,?,?)
+             ON CONFLICT(source_id,seq) DO UPDATE SET digest=excluded.digest, reason=excluded.reason,
+             rejected_at=excluded.rejected_at",
+            params![source_id, seq, digest, reason, at],
+        )?;
+        Ok(())
     }
 
     pub fn setting(&self, key: &str) -> Result<Option<String>> {
@@ -143,6 +177,7 @@ impl Queue {
         tx.execute("DELETE FROM observations", [])?;
         tx.execute("DELETE FROM imports", [])?;
         tx.execute("DELETE FROM settings", [])?;
+        tx.execute("DELETE FROM rejections", [])?;
         tx.commit()?;
         self.db.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
         self.db.execute("VACUUM", [])?;

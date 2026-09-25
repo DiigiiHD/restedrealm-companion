@@ -39,6 +39,7 @@ pub struct StateView {
     last_error: Option<String>,
     observations: i64,
     pending: i64,
+    rejected: i64,
     last_upload_at: Option<i64>,
     last_upload_count: Option<i64>,
     this_week: Vec<Group>,
@@ -75,6 +76,7 @@ pub async fn get_state(app: AppHandle, shared: SharedState<'_>) -> Result<StateV
         last_error: live.last_error,
         observations: status.observations,
         pending: status.pending,
+        rejected: status.rejected,
         last_upload_at: setting(keys::LAST_UPLOAD_AT).and_then(|v| v.parse().ok()),
         last_upload_count: setting(keys::LAST_UPLOAD_COUNT).and_then(|v| v.parse().ok()),
         this_week: groups,
@@ -112,8 +114,8 @@ pub async fn install_addon(app: AppHandle, shared: SharedState<'_>) -> Result<St
 
 #[tauri::command]
 pub async fn pair(app: AppHandle, shared: SharedState<'_>, code: String) -> Result<(), String> {
-    let name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows PC".into());
-    redeem_code(&Https::default(), shared.store.as_ref(), &code, &name).map_err(|e| e.to_string())?;
+    redeem_code(&Https::default(), shared.store.as_ref(), &code, &crate::connect::device_name())
+        .map_err(|e| e.to_string())?;
     shared.nudge(Trigger::SyncNow);
     changed(&app);
     Ok(())
@@ -130,9 +132,10 @@ pub async fn set_auto_upload(app: AppHandle, shared: SharedState<'_>, on: bool) 
 }
 
 #[tauri::command]
-pub async fn set_autostart(app: AppHandle, on: bool) -> Result<(), String> {
+pub async fn set_autostart(app: AppHandle, shared: SharedState<'_>, on: bool) -> Result<(), String> {
     let manager = app.autolaunch();
     if on { manager.enable() } else { manager.disable() }.map_err(|e| e.to_string())?;
+    shared.queue()?.set_setting(keys::AUTOSTART, if on { "1" } else { "0" }).map_err(|e| e.to_string())?;
     changed(&app);
     Ok(())
 }
@@ -157,6 +160,8 @@ pub struct RecordView {
     label: String,
     observed_at: Option<i64>,
     uploaded: bool,
+    /// Why RestedRealm refused it, if it did.
+    rejected: Option<String>,
     sent: String,
 }
 
@@ -173,6 +178,7 @@ pub async fn recent_records(shared: SharedState<'_>, limit: i64) -> Result<Vec<R
                 label: kind_label(kind),
                 observed_at: record.get("observedAt").and_then(|t| t.as_i64()),
                 uploaded: row.uploaded,
+                rejected: row.rejected,
                 sent: serde_json::to_string_pretty(&redact(&record)).unwrap_or_default(),
             }
         })
@@ -191,9 +197,13 @@ pub async fn forget_local_data(app: AppHandle, shared: SharedState<'_>) -> Resul
     // Keep the connection and the game folder; only the records go.
     let mut queue = shared.queue()?;
     let game = queue.setting(keys::GAME_DIR).ok().flatten();
+    let autostart = queue.setting(keys::AUTOSTART).ok().flatten();
     queue.forget().map_err(|e| e.to_string())?;
     if let Some(game) = game {
         queue.set_setting(keys::GAME_DIR, &game).map_err(|e| e.to_string())?;
+    }
+    if let Some(autostart) = autostart {
+        queue.set_setting(keys::AUTOSTART, &autostart).map_err(|e| e.to_string())?;
     }
     queue.set_setting(keys::SETUP_DONE, "1").map_err(|e| e.to_string())?;
     // Uploads start again only when the player turns them back on.
@@ -205,10 +215,16 @@ pub async fn forget_local_data(app: AppHandle, shared: SharedState<'_>) -> Resul
 #[tauri::command]
 pub async fn open_page(app: AppHandle, page: String) -> Result<(), String> {
     let url = match page.as_str() {
-        "account" => "https://restedrealm.com/account/collector",
+        "account" => "https://restedrealm.com/account/companion",
         "privacy" => "https://restedrealm.com/privacy",
         "home" => "https://restedrealm.com/",
         _ => return Err("Unknown page".into()),
     };
     app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Start connecting through the browser.
+#[tauri::command]
+pub async fn start_connect(app: AppHandle, shared: SharedState<'_>) -> Result<(), String> {
+    crate::connect::start(&app, &shared)
 }

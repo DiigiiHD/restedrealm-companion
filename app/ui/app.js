@@ -168,6 +168,7 @@ function renderHome() {
   }));
   $("week-empty").hidden = state.thisWeek.length > 0;
   $("totals").textContent = `${count(state.observations, "record", "records")} kept on this PC.` +
+    (state.rejected ? ` ${count(state.rejected, "record was", "records were")} not accepted by RestedRealm; see My data.` : "") +
     (state.wowRunning ? " World of Warcraft is open; new records arrive after you log out or type /reload." : "");
 }
 
@@ -199,12 +200,19 @@ async function loadRecords() {
     when.className = "when";
     when.textContent = record.observedAt ? relative(record.observedAt) : "";
     const chip = document.createElement("span");
-    chip.className = record.uploaded ? "chip sent" : "chip";
-    chip.textContent = record.uploaded ? "Uploaded" : "Waiting";
+    chip.className = record.rejected ? "chip refused" : record.uploaded ? "chip sent" : "chip";
+    chip.textContent = record.rejected ? "Not accepted" : record.uploaded ? "Uploaded" : "Waiting";
     summary.append(what, when, chip);
+    details.append(summary);
+    if (record.rejected) {
+      const reason = document.createElement("p");
+      reason.className = "reason";
+      reason.textContent = `RestedRealm did not accept this record: ${record.rejected} It stays on this PC and is not sent again.`;
+      details.append(reason);
+    }
     const pre = document.createElement("pre");
     pre.textContent = record.sent;
-    details.append(summary, pre);
+    details.append(pre);
     item.append(details);
     return item;
   }));
@@ -241,6 +249,16 @@ function wire() {
     }
   }));
   $("addon-next").addEventListener("click", () => goStep("account"));
+
+  $("connect-browser").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+    $("account-error").textContent = "";
+    try {
+      await invoke("start_connect");
+      $("connect-waiting").hidden = false;
+    } catch (error) {
+      $("account-error").textContent = message(error);
+    }
+  }));
 
   const code = $("code");
   code.addEventListener("input", () => {
@@ -364,6 +382,11 @@ async function start() {
     show("home");
   }
   await tauri.event.listen("state-changed", () => refresh());
+  await tauri.event.listen("connect-result", ({ payload }) => {
+    $("connect-waiting").hidden = true;
+    $("account-error").textContent = payload.ok ? "" : payload.message;
+    if (payload.ok && view !== "setup") show("home");
+  });
   // Keep relative times fresh while the window is open.
   setInterval(() => render(), 30000);
 }

@@ -13,6 +13,8 @@ pub mod keys {
     pub const GAME_DIR: &str = "game_dir";
     pub const AUTO_UPLOAD: &str = "auto_upload";
     pub const SETUP_DONE: &str = "setup_done";
+    /// The player's start-with-Windows choice, so it survives reinstalling.
+    pub const AUTOSTART: &str = "autostart";
     pub const LAST_UPLOAD_AT: &str = "last_upload_at";
     pub const LAST_UPLOAD_COUNT: &str = "last_upload_count";
 }
@@ -40,6 +42,8 @@ pub struct Shared {
     pub live: Mutex<Live>,
     pub trigger: Mutex<Sender<Trigger>>,
     pub tray_status: Mutex<Option<MenuItem<Wry>>>,
+    /// The browser connect request this app started, and when.
+    pub pending_connect: Mutex<Option<(String, std::time::Instant)>>,
 }
 
 impl Shared {

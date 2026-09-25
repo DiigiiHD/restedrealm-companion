@@ -1,6 +1,6 @@
 # RestedRealm Companion: Windows app plan
 
-Status: phases 1 (the Rust core) and 2 (the app window, tray and background worker) are built; see [app/README.md](../app/README.md). Phase 2 has not yet run on a Windows PC. Phases 3 to 6 are not built yet. Written 25 September 2026 after the owner's decisions below. The current Python companion keeps working until this app replaces it.
+Status: phases 1 to 3 and the installer part of phase 5 are built; see [app/README.md](../app/README.md). Nothing has run on a Windows PC yet. Addon updates and the status file (phase 4), automatic app updates (phase 5) and the test group (phase 6) are still to do. Written 25 September 2026 after the owner's decisions below. The current Python companion keeps working until this app replaces it.
 
 ## Goal
 
@@ -32,7 +32,7 @@ A player installs one small program from restedrealm.com, connects it to their R
 4. **Daily use.** The app starts minimized to the icon next to the Windows clock. The icon's menu shows status, "Upload now", "Open RestedRealm", "Settings" and "Quit". The main window answers three questions in plain words: is it connected, when did it last upload, and is anything waiting. Below that, a friendly summary such as "This week: 14 quests and 32 characters recorded", with a link to the player's contributions on restedrealm.com. Raw record types, sequence numbers and digests do not appear on the main screen. Notifications are rare: only a problem the player can fix, such as a lost connection or a WoW folder that moved.
    - **"View my data"** in Settings keeps the current detailed list for anyone who wants it: each record's type in readable words, its date, whether it was uploaded, and the exact content sent. It exists for trust and transparency, so a player can always check what leaves their PC, but nobody needs it to use the app.
 5. **In game.** At login the addon prints one quiet line, for example "RestedRealm Companion: connected, last upload 2 hours ago". If the app has not picked up data for a few days, the line becomes a gentle warning. `/rrc status` shows the same detail.
-6. **Uninstall** through Settings > Apps or Programs and Features. The uninstaller asks two questions, both unchecked by default: "Also remove the addon from World of Warcraft" and "Also delete my local RestedRealm data". It removes the start-with-Windows entry and the saved device credential, and tells the player they can remove the device from their account page too.
+6. **Uninstall** through Settings > Apps or Programs and Features. The uninstaller always removes the start-with-Windows entry. Its one checkbox, "Delete the application data" (unchecked), also deletes the local queue and forgets this PC's connection. The addon stays in World of Warcraft; it records nothing useful without the app and can be removed from the game's AddOns folder. A second checkbox for the addon would need a custom installer page and is left for later.
 
 ## How it fits together
 
@@ -119,9 +119,9 @@ Tauri's own update signature (above) is free and separate. It protects updates w
 
 1. **Core port. Done 25 September 2026.** Rust core in `app/core` with 20 tests of its own and a parity check that matches the Python version byte for byte on generated saves, ready to run on Windows and Linux by GitHub Actions once `docs/ci/core.yml` is moved to `.github/workflows/`. No window yet. Applying to SignPath Foundation is still to do.
 2. **App shell. Built 25 September 2026, not yet run on Windows.** Tauri window in the website look, setup screens, tray icon, start with Windows, settings, "View my data", the background worker with automatic freeing of the addon's space, a basic addon install, and a one-time copy of the pilot queue.
-3. **Account connection.** Website changes for opening pairing, the approval page and the return link. The app side of the same flow.
+3. **Account connection. Built 25 September 2026.** The website opens pairing to every signed-in account and has the `/companion/connect` confirm page; the app starts the flow, handles the `restedrealm-companion://` link and accepts only its own state. Checked end to end against a local copy of the website. The website change is not deployed yet.
 4. **Addon handling.** Finding WoW, the website settings file, installing and updating the addon, `CompanionStatus.lua` and the in-game status line.
-5. **Installer and updates.** NSIS installer with the launch checkbox and uninstall choices, the signed updater, the GitHub Actions release job and the download page.
+5. **Installer and updates. Installer built 25 September 2026; updater not yet.** Per-user NSIS installer with the RestedRealm side image, a launch checkbox, the `restedrealm-companion://` link registered, and an uninstaller that removes start with Windows and, when "Delete the application data" is ticked, the local data and the saved connection. The release workflow is `docs/ci/release.yml`. The signed updater still needs the owner's signing key.
 6. **Test group, then everyone.** A handful of players first, unsigned if signing is not ready, with the owner's PC as the first install. Wider release when updates, uninstall and the Forever-folder switch have been proven on real PCs.
 
 ## Still open

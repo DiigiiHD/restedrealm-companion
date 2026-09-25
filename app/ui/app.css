@@ -179,9 +179,9 @@ main > section { max-width: 820px; margin: 0 auto; }
 .found.missing::before { content: "! "; color: var(--gold); font-weight: 700; }
 .path { color: var(--muted); font-size: 13px; }
 
-.howto { margin: 0 0 16px; padding-left: 20px; color: var(--muted); }
-.howto li { margin-bottom: 4px; }
-.howto strong { color: var(--text); font-weight: 600; }
+.code-fallback { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+.code-fallback summary { cursor: pointer; color: var(--gold); font-size: 13px; }
+.code-fallback[open] summary { margin-bottom: 10px; }
 .field { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
 .code-row { display: flex; gap: 10px; }
 .code-row input {
@@ -278,6 +278,8 @@ main > section { max-width: 820px; margin: 0 auto; }
 .records .when { color: var(--muted); font-size: 12.5px; }
 .chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); }
 .chip.sent { color: var(--green); border-color: #9eaf8455; }
+.chip.refused { color: var(--red); border-color: #d98a7455; }
+.records .reason { margin: 0; padding: 10px 16px 0 40px; color: var(--red); font-size: 12.5px; border-top: 1px solid var(--line); }
 .records pre {
   margin: 0;
   padding: 12px 16px 16px 40px;

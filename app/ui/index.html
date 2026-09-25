@@ -67,22 +67,26 @@
       <div class="step" data-step="account" hidden>
         <p class="eyebrow">Step 3 of 5</p>
         <h1>Connect your account</h1>
-        <p class="lead">Sign in on restedrealm.com with Discord, create a connection code on your account page and enter it here.</p>
+        <p class="lead">Connect this PC to your RestedRealm account, so your uploads count for you. It takes one click in your browser.</p>
         <div class="panel" id="account-form">
-          <ol class="howto">
-            <li><button type="button" class="link" data-open="account">Open my account page</button> on restedrealm.com.</li>
-            <li>Choose <strong>Create a code</strong>. It works once and expires after five minutes.</li>
-            <li>Enter the code below.</li>
-          </ol>
-          <label class="field" for="code">Connection code</label>
-          <div class="code-row">
-            <input id="code" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="16" placeholder="16 characters">
-            <button type="button" class="button" id="code-connect" disabled>Connect</button>
+          <div id="connect-start">
+            <p>Choose <strong>Connect</strong>. Your browser opens restedrealm.com, where you sign in with Discord if needed and confirm. This window updates by itself.</p>
+            <div class="actions">
+              <button type="button" class="button outline" data-back>Back</button>
+              <button type="button" class="button" id="connect-browser">Connect</button>
+            </div>
           </div>
+          <p class="note" id="connect-waiting" role="status" hidden>Finish in your browser. When you confirm there, allow it to open RestedRealm Companion.</p>
           <p class="error" id="account-error" role="alert"></p>
-          <div class="actions">
-            <button type="button" class="button outline" data-back>Back</button>
-          </div>
+          <details class="code-fallback" id="code-fallback">
+            <summary>Use a code instead</summary>
+            <p class="small">On restedrealm.com, open <button type="button" class="link" data-open="account">your companion page</button>, choose <strong>Create a code</strong> and enter it here within five minutes.</p>
+            <label class="field" for="code">Connection code</label>
+            <div class="code-row">
+              <input id="code" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="16" placeholder="16 characters">
+              <button type="button" class="button" id="code-connect" disabled>Connect</button>
+            </div>
+          </details>
         </div>
         <div class="panel" id="account-done" hidden>
           <p class="found ok">This PC is connected to your RestedRealm account.</p>

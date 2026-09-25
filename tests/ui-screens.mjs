@@ -18,7 +18,7 @@ const now = Math.floor(Date.now() / 1000);
 const base = {
   version: "0.2.0", setupDone: false, connected: false, autoUpload: false, autostart: false,
   gameDir: null, savesFound: 0, addonVersion: null, bundledAddonVersion: "0.1.13-probe", wowRunning: false,
-  working: false, lastError: null, observations: 0, pending: 0, lastUploadAt: null, lastUploadCount: null, thisWeek: [],
+  working: false, lastError: null, observations: 0, pending: 0, rejected: 0, lastUploadAt: null, lastUploadCount: null, thisWeek: [],
 };
 const home = { ...base, setupDone: true, connected: true, autoUpload: true, autostart: true,
   gameDir: "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_", savesFound: 1, addonVersion: "0.1.13-probe",
@@ -27,6 +27,7 @@ const home = { ...base, setupDone: true, connected: true, autoUpload: true, auto
 const records = [
   { label: "Quest objectives and rewards", observedAt: now - 3600, uploaded: true, sent: JSON.stringify({ kind: "quest_objectives", seq: 331, data: { questID: 426, rewardChoices: [3447, 3834], xp: 875, money: 450 } }, null, 2) },
   { label: "Merchant stock", observedAt: now - 5400, uploaded: false, sent: "{ }" },
+  { label: "Flight map", observedAt: now - 7000, uploaded: false, rejected: "Observation contains too many entries.", sent: "{ }" },
   { label: "Creature or character seen", observedAt: now - 86400 * 2, uploaded: true, sent: "{ }" },
 ];
 
@@ -50,11 +51,13 @@ const shots = [
   ["02-setup-game-found", { ...base, gameDir: home.gameDir }, null, 900, 660],
   ["03-setup-addon", { ...base, gameDir: home.gameDir, wowRunning: true }, "addon", 900, 660],
   ["04-setup-account", { ...base, gameDir: home.gameDir, addonVersion: "0.1.13-probe" }, "account", 900, 660],
+  ["04b-setup-account-code", { ...base, gameDir: home.gameDir, addonVersion: "0.1.13-probe" }, "account-code", 900, 660],
   ["05-setup-uploads", { ...base, gameDir: home.gameDir, addonVersion: "0.1.13-probe", connected: true }, "uploads", 900, 760],
   ["06-setup-done", { ...base, gameDir: home.gameDir, addonVersion: "0.1.13-probe", connected: true }, "done", 900, 660],
   ["07-home", home, "home", 900, 660],
   ["08-home-waiting-error", { ...home, pending: 12, lastError: "Could not reach RestedRealm" }, "home", 900, 660],
-  ["09-data", home, "data", 900, 660],
+  ["09-data", { ...home, rejected: 1 }, "data", 900, 660],
+  ["09b-home-refused", { ...home, rejected: 1 }, "home", 900, 660],
   ["10-settings", home, "settings", 900, 760],
   ["11-home-narrow", home, "home", 720, 540],
   ["12-setup-uploads-narrow", { ...base, gameDir: home.gameDir, addonVersion: "0.1.13-probe", connected: true }, "uploads", 720, 540],
@@ -69,12 +72,17 @@ for (const [name, state, target, width, height] of shots) {
   await page.addInitScript(mock(state, records));
   await page.goto(UI);
   await page.waitForTimeout(250);
-  if (target === "addon" || target === "account" || target === "uploads" || target === "done") {
+  if (target === "account-code") {
+    await page.evaluate(() => { goStep("account"); document.getElementById("code-fallback").open = true; });
+  } else if (target === "addon" || target === "account" || target === "uploads" || target === "done") {
     await page.evaluate((t) => goStep(t), target);
   } else if (target) {
     await page.evaluate((t) => show(t), target);
   }
-  if (target === "data") await page.click(".records summary");
+  if (target === "data") {
+    await page.click(".records li:nth-child(1) summary");
+    await page.click(".records li:nth-child(3) summary");
+  }
   await page.waitForTimeout(150);
   await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: false });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);

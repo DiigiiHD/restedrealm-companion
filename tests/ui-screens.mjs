@@ -18,7 +18,7 @@ const now = Math.floor(Date.now() / 1000);
 const base = {
   version: "0.2.0", setupDone: false, connected: false, autoUpload: false, autostart: false,
   gameDir: null, savesFound: 0, addonVersion: null, bundledAddonVersion: "0.1.13-probe", wowRunning: false,
-  working: false, lastError: null, observations: 0, pending: 0, rejected: 0, lastUploadAt: null, lastUploadCount: null, thisWeek: [],
+  working: false, lastError: null, observations: 0, pending: 0, rejected: 0, updatesEnabled: true, update: null, lastUploadAt: null, lastUploadCount: null, thisWeek: [],
 };
 const home = { ...base, setupDone: true, connected: true, autoUpload: true, autostart: true,
   gameDir: "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_", savesFound: 1, addonVersion: "0.1.13-probe",

@@ -7,6 +7,7 @@ mod connect;
 mod labels;
 mod state;
 mod tray;
+mod updater;
 mod worker;
 
 use state::{Live, Shared};
@@ -37,6 +38,7 @@ fn main() {
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![BACKGROUND_ARG])))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let local = app.path().local_data_dir()?;
             let state_dir = local.join("RestedRealm Companion");
@@ -91,6 +93,8 @@ fn main() {
                 }
             }
 
+            updater::start(app.handle().clone(), shared.clone());
+
             let background = std::env::args().any(|a| a == BACKGROUND_ARG);
             if !background || !shared.flag(state::keys::SETUP_DONE) {
                 tray::show_window(app.handle());
@@ -119,6 +123,7 @@ fn main() {
             commands::forget_local_data,
             commands::open_page,
             commands::start_connect,
+            commands::check_for_updates,
         ])
         .run(tauri::generate_context!())
         .expect("RestedRealm Companion could not start");

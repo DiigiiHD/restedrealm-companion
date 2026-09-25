@@ -10,6 +10,7 @@ const STEPS = ["game", "addon", "account", "uploads", "done"];
 let state = null;
 let view = null;
 let step = null;
+let updateMessage = "";
 
 // ---------- helpers ----------
 
@@ -184,6 +185,15 @@ function renderSettings() {
   $("set-account").textContent = state.connected ? "This PC is connected." : "Not connected.";
   $("set-account-action").textContent = state.connected ? "Disconnect" : "Connect";
   $("version").textContent = state.version;
+  if (!updateMessage) {
+    $("set-version").textContent = state.update
+      ? `${state.update}. The app restarts by itself.`
+      : state.updatesEnabled
+        ? `Version ${state.version}. New versions install themselves in the background.`
+        : `Version ${state.version}. This copy does not update itself; download new versions from restedrealm.com.`;
+  }
+  $("set-update").hidden = !state.updatesEnabled;
+  $("set-update").disabled = !!state.update;
 }
 
 async function loadRecords() {
@@ -331,6 +341,17 @@ function wire() {
   $("set-auto").addEventListener("click", () => guard(() => invoke("set_auto_upload", { on: !state.autoUpload })));
   $("set-start").addEventListener("click", () => guard(() => invoke("set_autostart", { on: !state.autostart })));
   $("set-game-change").addEventListener("click", () => chooseGame(settingsError));
+  $("set-update").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+    updateMessage = "Checking for a new version.";
+    $("set-version").textContent = updateMessage;
+    try {
+      updateMessage = await invoke("check_for_updates");
+    } catch (error) {
+      updateMessage = message(error);
+    }
+    $("set-version").textContent = updateMessage;
+    setTimeout(() => { updateMessage = ""; render(); }, 8000);
+  }));
   $("set-addon-install").addEventListener("click", (e) => busy(e.currentTarget, () => guard(() => invoke("install_addon"))));
   $("set-account-action").addEventListener("click", () => {
     if (state.connected) {

@@ -104,6 +104,18 @@ fn cycle(app: &AppHandle, shared: &Shared, queue: &mut Queue, game: Option<&Path
     }
 
     let setup_done = queue.setting(keys::SETUP_DONE).ok().flatten().as_deref() == Some("1");
+
+    // A new app version carries a new addon. Replace the installed one while
+    // the game is closed; an addon the player removed is not put back.
+    if let (true, false, Some(game)) = (setup_done, running, game) {
+        let installed = crate::addon::addon_version(&crate::addon::installed_folder(game));
+        let bundled = crate::addon::addon_version(&shared.addon_source);
+        if installed.is_some() && bundled.is_some() && installed != bundled {
+            if let Err(e) = crate::addon::install(&shared.addon_source, game) {
+                problem = Some(format!("The addon could not be updated: {e}"));
+            }
+        }
+    }
     let auto = queue.setting(keys::AUTO_UPLOAD).ok().flatten().as_deref() == Some("1");
     let pending = queue.status().map(|s| s.pending).unwrap_or(0);
     if setup_done && pending > 0 && (auto || forced) && shared.connected() {

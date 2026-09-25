@@ -32,6 +32,15 @@
           "restedrealm-companion"
         ]
       }
+    },
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/DiigiiHD/restedrealm-companion/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "quiet"
+      }
     }
   },
   "bundle": {

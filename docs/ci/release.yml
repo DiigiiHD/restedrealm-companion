@@ -29,18 +29,36 @@ jobs:
       - run: npm ci
       - name: Tests before building
         run: cargo test
+      # Official builds update themselves. The public key is a repository
+      # variable and the private key a secret (see docs/RELEASING.md). Without
+      # them a release could never update, so the build stops instead.
+      - name: Turn on automatic updates for this build
+        shell: bash
+        env:
+          UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          if [ -z "$UPDATER_PUBKEY" ] || [ "$HAS_KEY" != "true" ]; then
+            echo "::error::Set the TAURI_UPDATER_PUBKEY variable and the TAURI_SIGNING_PRIVATE_KEY secret first (docs/RELEASING.md)."
+            exit 1
+          fi
+          printf '{"bundle":{"createUpdaterArtifacts":true},"plugins":{"updater":{"pubkey":"%s"}}}' "$UPDATER_PUBKEY" > src-tauri/tauri.release.conf.json
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
           tagName: ${{ github.ref_name }}
           releaseName: RestedRealm Companion ${{ github.ref_name }}
           releaseBody: |
             Download `RestedRealm Companion_*_x64-setup.exe` below and run it. Windows 10 and 11.
+            Already installed? The app updates itself; nothing to do.
 
             The installer is not yet code signed, so Windows may show "Windows protected your PC".
             Choose "More info" and then "Run anyway".
           releaseDraft: true
           prerelease: false
-          args: --bundles nsis
+          includeUpdaterJson: true
+          args: --bundles nsis --config src-tauri/tauri.release.conf.json

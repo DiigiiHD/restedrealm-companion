@@ -33,6 +33,8 @@ pub struct Live {
     pub working: bool,
     pub last_error: Option<String>,
     pub wow_running: bool,
+    /// Set while a new version is being installed.
+    pub update: Option<String>,
 }
 
 pub struct Shared {

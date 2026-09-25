@@ -36,6 +36,8 @@ pub struct StateView {
     bundled_addon_version: Option<String>,
     wow_running: bool,
     working: bool,
+    updates_enabled: bool,
+    update: Option<String>,
     last_error: Option<String>,
     observations: i64,
     pending: i64,
@@ -72,6 +74,8 @@ pub async fn get_state(app: AppHandle, shared: SharedState<'_>) -> Result<StateV
         bundled_addon_version: addon::addon_version(&shared.addon_source),
         game_dir: game.map(|g| g.display().to_string()),
         wow_running: live.wow_running,
+        updates_enabled: crate::updater::enabled(&app),
+        update: live.update,
         working: live.working,
         last_error: live.last_error,
         observations: status.observations,
@@ -227,4 +231,10 @@ pub async fn open_page(app: AppHandle, page: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn start_connect(app: AppHandle, shared: SharedState<'_>) -> Result<(), String> {
     crate::connect::start(&app, &shared)
+}
+
+/// "Check for updates" in Settings.
+#[tauri::command]
+pub async fn check_for_updates(app: AppHandle, shared: SharedState<'_>) -> Result<String, String> {
+    crate::updater::check_and_install(&app, &shared).await
 }

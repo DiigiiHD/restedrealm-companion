@@ -241,6 +241,29 @@ frame.callback(frame, "TRAINER_UPDATE")
 local largeTrainer = RestedRealmCollectorDB.records[#RestedRealmCollectorDB.records]
 assert(largeTrainer.kind == "trainer" and #largeTrainer.data.services == 142)
 assert(largeTrainer.data.truncated == false)
+-- The same list again is not recorded twice while the window stays open.
+local beforeRepeat = #RestedRealmCollectorDB.records
+frame.callback(frame, "TRAINER_UPDATE")
+assert(#RestedRealmCollectorDB.records == beforeRepeat)
+-- A filter hiding known services is opened while reading and put back.
+local trainerFilter = { available = 1, unavailable = 1, used = 0 }
+local filterEvents = 0
+GetTrainerServiceTypeFilter = function(status) return trainerFilter[status] end
+SetTrainerServiceTypeFilter = function(status, value)
+    trainerFilter[status] = value
+    filterEvents = filterEvents + 1
+    frame.callback(frame, "TRAINER_UPDATE")
+end
+GetNumTrainerServices = function() return trainerFilter.used == 1 and 3 or 2 end
+GetTrainerServiceInfo = function(i) return "Rank " .. i, i == 3 and "used" or "available" end
+frame.callback(frame, "TRAINER_CLOSED")
+frame.callback(frame, "TRAINER_SHOW")
+local fullTrainer = RestedRealmCollectorDB.records[#RestedRealmCollectorDB.records]
+assert(fullTrainer.kind == "trainer" and #fullTrainer.data.services == 3)
+assert(fullTrainer.data.services[3].status == "used" and fullTrainer.data.allStatuses == true)
+assert(fullTrainer.data.filterWasHiding == true and trainerFilter.used == 0 and filterEvents == 2)
+assert(#RestedRealmCollectorDB.records == beforeRepeat + 1, "filter changes did not start another read")
+GetTrainerServiceTypeFilter, SetTrainerServiceTypeFilter = nil, nil
 GetNumTrainerServices = function() return 0 end
 frame.callback(frame, "TRAINER_SHOW")
 local emptyTrainer = RestedRealmCollectorDB.records[#RestedRealmCollectorDB.records]

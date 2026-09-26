@@ -9,7 +9,7 @@ Pushing code to Git does not change anyone's app. A version goes out only when a
 1. A version tag such as `v0.2.1` is pushed. It must match `version` in `app/Cargo.toml`.
 2. The `Release RestedRealm Companion` workflow builds the installer on Windows, signs the update with the updater key, and makes a **draft** GitHub Release with the installer, its `.sig` file and `latest.json`.
 3. The owner checks the draft and presses **Publish release**.
-4. Every installed app looks at `releases/latest/download/latest.json` about a minute after it starts and every six hours. When it finds a newer version with a valid signature, it installs it quietly (a per-user install needs no permission prompt) and starts again. The addon in World of Warcraft is updated from the new app the next time the game is closed.
+4. Every installed app looks at `releases/latest/download/latest.json` about a minute after it starts and then every hour. When it finds a newer version with a valid signature, it installs it quietly (a per-user install needs no permission prompt) and starts again. The addon in World of Warcraft is updated from the new app the next time the game is closed.
 
 A draft is invisible to the apps, so nothing reaches players until it is published. An update signed with any other key is refused.
 

@@ -1,6 +1,6 @@
 -- RestedRealm Forever collection probe. No gameplay actions or network access.
 local ADDON = ...
-local VERSION = "0.1.16"
+local VERSION = "0.1.17"
 local IDENTITY_SCHEMA = 2
 -- 1: player name, race and class in captured text are replaced by <name>,
 -- <race> and <class>. Only records carrying this may upload their text.
@@ -530,7 +530,33 @@ local function merchant()
     record("merchant", data)
 end
 
-local function trainer()
+-- The trainer window hides services by its filter (by default what the player
+-- already knows). Show every status while reading, then put the player's
+-- filter back. Changing the filter fires TRAINER_UPDATE, which must not
+-- start another read.
+local TRAINER_STATUSES = { "available", "unavailable", "used" }
+local readingTrainer, trainerQuietUntil, lastTrainerDigest = false, nil, nil
+
+local function showAllTrainerServices()
+    if type(GetTrainerServiceTypeFilter) ~= "function" or type(SetTrainerServiceTypeFilter) ~= "function" then
+        return nil
+    end
+    local hidden = {}
+    for _, status in ipairs(TRAINER_STATUSES) do
+        local shown = call(GetTrainerServiceTypeFilter, status)
+        if not shown or shown == 0 then
+            hidden[#hidden + 1] = status
+            call(SetTrainerServiceTypeFilter, status, 1)
+        end
+    end
+    return hidden
+end
+
+local function restoreTrainerFilter(hidden)
+    for _, status in ipairs(hidden or {}) do call(SetTrainerServiceTypeFilter, status, 0) end
+end
+
+local function readTrainer(hidden)
     local count = number(call(GetNumTrainerServices))
     if not count or count <= 0 then
         local npc = interaction()
@@ -546,6 +572,7 @@ local function trainer()
         return
     end
     local data = { npc = interaction(), shownCount = count,
+        allStatuses = hidden ~= nil, filterWasHiding = hidden and #hidden > 0 or nil,
         truncated = count > MAX_TRAINER_SERVICES, services = {} }
     if db.captureText then longText(data, "greeting", call(GetTrainerGreetingText)) end
     for i = 1, math.min(count, MAX_TRAINER_SERVICES) do
@@ -559,7 +586,28 @@ local function trainer()
             itemID = itemID(call(GetTrainerServiceItemLink, i)),
         }
     end
+    -- TRAINER_UPDATE fires often; record the list again only when it changed.
+    local parts = { tostring(data.npc and data.npc.id) }
+    for _, service in ipairs(data.services) do
+        parts[#parts + 1] = tostring(service.name) .. "=" .. tostring(service.status)
+    end
+    local digest = table.concat(parts, "|")
+    if digest == lastTrainerDigest then return end
+    lastTrainerDigest = digest
     record("trainer", data)
+end
+
+local function trainer()
+    if readingTrainer then return end
+    local now = number(call(GetTime))
+    if trainerQuietUntil and now and now < trainerQuietUntil then return end
+    readingTrainer = true
+    local hidden = showAllTrainerServices()
+    local ok, problem = pcall(readTrainer, hidden)
+    restoreTrainerFilter(hidden)
+    readingTrainer = false
+    if hidden and #hidden > 0 and now then trainerQuietUntil = now + 0.5 end
+    if not ok then error(problem, 0) end
 end
 
 local function professionOpened()
@@ -1263,6 +1311,7 @@ local handlers = {
     MERCHANT_SHOW = merchant,
     TRAINER_SHOW = trainer,
     TRAINER_UPDATE = trainer,
+    TRAINER_CLOSED = function() lastTrainerDigest = nil end,
     TRADE_SKILL_SHOW = professionOpened,
     TRADE_SKILL_UPDATE = professionOpened,
     NEW_RECIPE_LEARNED = function(recipeID)

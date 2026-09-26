@@ -89,6 +89,10 @@ The owner-only website intake for account pairing, private uploads, revocation, 
 
 The API choices follow Blizzard-generated `classic_beta` interface documentation for [gossip](https://github.com/Gethe/wow-ui-source/blob/classic_beta/Interface/AddOns/Blizzard_APIDocumentationGenerated/GossipInfoDocumentation.lua) and [merchant events](https://github.com/Gethe/wow-ui-source/blob/classic_beta/Interface/AddOns/Blizzard_APIDocumentationGenerated/MerchantFrameDocumentation.lua), with runtime guards because the installed Forever beta is the final authority. The addon is free, visible source, has no ads or donation prompt, and uses only player-initiated observations.
 
+## Version 0.1.17 full trainer lists
+
+A trainer window lists only what its filter shows, and by default it hides what the character already knows, so each player reported a different part of a trainer's list. From 0.1.17 the addon briefly shows every status (available, not yet available, already known) while it reads the list, then puts the player's own filter back. Each service keeps its status. A trainer record is saved again during one visit only when the list changed. A class trainer still shows its list only to players of that class; no addon can read it for other classes.
+
 ## License
 
 The addon, companion, tools and tests in this repository are released under the [MIT License](LICENSE). The license covers this project's own source code only. World of Warcraft game content and data, including any quest or NPC text a local save captures, remain Blizzard's and are not licensed here. Local queues, game saves, credentials and backups stay private and are never part of the repository.

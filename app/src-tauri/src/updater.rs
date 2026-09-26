@@ -1,5 +1,5 @@
 //! Keeping the app itself current. A release carries a signed update file on
-//! GitHub; the app checks it after start and every six hours, installs a newer
+//! GitHub; the app checks it after start and every hour, installs a newer
 //! version quietly (a per-user install needs no permission prompt) and starts
 //! again. An update whose signature does not match the key built into the app
 //! is refused by the updater plugin.
@@ -11,7 +11,7 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_updater::UpdaterExt;
 
 const FIRST_CHECK: Duration = Duration::from_secs(60);
-const EVERY: Duration = Duration::from_secs(6 * 3600);
+const EVERY: Duration = Duration::from_secs(3600);
 
 /// Release builds get the update key from the release workflow. A local build
 /// has none, and then never looks for updates.

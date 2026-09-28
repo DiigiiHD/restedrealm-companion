@@ -1,6 +1,6 @@
 -- RestedRealm Forever collection probe. No gameplay actions or network access.
 local ADDON = ...
-local VERSION = "0.1.17"
+local VERSION = "0.1.18"
 local IDENTITY_SCHEMA = 2
 -- 1: player name, race and class in captured text are replaced by <name>,
 -- <race> and <class>. Only records carrying this may upload their text.
@@ -1253,6 +1253,278 @@ local function scheduleQuestScan()
     end
 end
 
+-- Collection capability check: which achievement, mount and toy APIs and
+-- events this client exposes, what ID each returns and whether a status looks
+-- per character or per account. Results stay in db.collectionCheck, which
+-- RestedRealm Companion never reads or uploads (it queues db.records only).
+-- The full check runs only on /rrc collections; unlock events add one small
+-- entry each. No acquisition source is inferred from nearby quests or loot.
+local CHECK_SCHEMA = 1
+local CHECK_SAMPLE = 3
+local CHECK_SCAN_LIMIT = 3000
+local CHECK_UNLOCKS = 20
+local CHECK_CHARACTERS = 10
+local ACHIEVEMENT_ACCOUNT_FLAG = 0x20000
+local lastMountCompanions
+local collectionEvents = {}
+
+-- call() passes on 12 values; GetAchievementInfo returns 15.
+local function callAll(fn, ...)
+    if type(fn) ~= "function" then return {} end
+    local results = { pcall(fn, ...) }
+    if not results[1] then return {} end
+    table.remove(results, 1)
+    return results
+end
+
+local function has(root, name)
+    return type(root) == "table" and type(root[name]) == "function"
+end
+
+-- An opaque local slot per character, so two characters can be compared
+-- without storing their names.
+local function characterSlot()
+    local guid = text(call(UnitGUID, "player"), 100) or "unknown"
+    local h = 5381
+    for i = 1, #guid do h = (h * 33 + string.byte(guid, i)) % 4294967296 end
+    return string.format("c%08x", h)
+end
+
+local function checkStore()
+    local store = db.collectionCheck
+    if type(store) ~= "table" or store.schema ~= CHECK_SCHEMA then
+        store = { schema = CHECK_SCHEMA, characters = {}, unlocks = {} }
+        db.collectionCheck = store
+    end
+    if type(store.characters) ~= "table" then store.characters = {} end
+    if type(store.unlocks) ~= "table" then store.unlocks = {} end
+    return store
+end
+
+local function achievementStatus(id)
+    id = number(id)
+    if not id then return nil end
+    -- Values 8, 10, 11 and 14 (description, icon, reward text, earned-by
+    -- name) are not kept; the earned-by name is a character name.
+    local info = callAll(GetAchievementInfo, id)
+    local name, points, completed, month, day, year = info[2], info[3], info[4], info[5], info[6], info[7]
+    local flags, isGuild, wasEarnedByMe, isStatistic = info[9], info[12], info[13], info[15]
+    if name == nil then return { id = id, known = false } end
+    flags = number(flags)
+    local accountWide
+    if flags then accountWide = math.floor(flags / ACHIEVEMENT_ACCOUNT_FLAG) % 2 == 1 end
+    return {
+        id = id, name = text(name, 120), points = number(points),
+        completed = completed == true, wasEarnedByMe = wasEarnedByMe,
+        accountWideFlag = accountWide,
+        isGuild = isGuild, isStatistic = isStatistic,
+        earnedDate = year and string.format("20%02d-%02d-%02d", year, month or 0, day or 0) or nil,
+    }
+end
+
+local function mountStatus(mountID)
+    mountID = number(mountID)
+    if not mountID or not has(C_MountJournal, "GetMountInfoByID") then return nil end
+    local name, spellID, _, _, _, sourceType, _, isFactionSpecific, _, shouldHideOnChar, isCollected =
+        call(C_MountJournal.GetMountInfoByID, mountID)
+    if name == nil then return { mountID = mountID, known = false } end
+    return { mountID = mountID, spellID = number(spellID), name = text(name, 120),
+        isCollected = isCollected, sourceType = number(sourceType),
+        isFactionSpecific = isFactionSpecific, shouldHideOnChar = shouldHideOnChar }
+end
+
+local function toyStatus(itemID)
+    itemID = number(itemID)
+    if not itemID then return nil end
+    local result = { itemID = itemID, owned = call(PlayerHasToy, itemID) }
+    if has(C_ToyBox, "GetToyInfo") then
+        local _, name = call(C_ToyBox.GetToyInfo, itemID)
+        result.name = text(name, 120)
+    end
+    return result
+end
+
+local function achievementCheck()
+    local out = {
+        apis = {
+            GetAchievementInfo = type(GetAchievementInfo) == "function",
+            GetNumCompletedAchievements = type(GetNumCompletedAchievements) == "function",
+            GetTotalAchievementPoints = type(GetTotalAchievementPoints) == "function",
+            GetLatestCompletedAchievements = type(GetLatestCompletedAchievements) == "function",
+            GetCategoryList = type(GetCategoryList) == "function",
+            C_AchievementInfo = type(C_AchievementInfo) == "table",
+        },
+        idType = "achievementID",
+    }
+    local total, completed = call(GetNumCompletedAchievements)
+    out.total, out.completed = number(total), number(completed)
+    out.points = number(call(GetTotalAchievementPoints))
+    local latest = { call(GetLatestCompletedAchievements) }
+    out.sample = {}
+    for i = 1, math.min(#latest, CHECK_SAMPLE) do
+        out.sample[#out.sample + 1] = achievementStatus(latest[i])
+    end
+    out.working = out.apis.GetAchievementInfo and (out.total ~= nil or #out.sample > 0)
+    return out
+end
+
+local function mountCheck()
+    local out = {
+        apis = {
+            C_MountJournal_GetMountIDs = has(C_MountJournal, "GetMountIDs"),
+            C_MountJournal_GetMountInfoByID = has(C_MountJournal, "GetMountInfoByID"),
+            C_MountJournal_GetNumMounts = has(C_MountJournal, "GetNumMounts"),
+            GetNumCompanions = type(GetNumCompanions) == "function",
+            GetCompanionInfo = type(GetCompanionInfo) == "function",
+        },
+        sample = {},
+    }
+    if out.apis.C_MountJournal_GetMountIDs and out.apis.C_MountJournal_GetMountInfoByID then
+        out.idType = "mountID (spellID alongside)"
+        local ids = call(C_MountJournal.GetMountIDs)
+        if type(ids) == "table" then
+            out.journalTotal = #ids
+            local collected, scanned = 0, 0
+            for _, mountID in ipairs(ids) do
+                scanned = scanned + 1
+                if scanned > CHECK_SCAN_LIMIT then out.scanTruncated = true; break end
+                local status = mountStatus(mountID)
+                if status and status.isCollected then
+                    collected = collected + 1
+                    if #out.sample < CHECK_SAMPLE then out.sample[#out.sample + 1] = status end
+                end
+            end
+            out.journalCollected = collected
+        end
+    end
+    if out.apis.GetNumCompanions then
+        out.companionMounts = number(call(GetNumCompanions, "MOUNT"))
+        lastMountCompanions = out.companionMounts
+        if out.apis.GetCompanionInfo and not out.idType then
+            out.idType = "creatureID and spellID (GetCompanionInfo)"
+            for i = 1, math.min(out.companionMounts or 0, CHECK_SAMPLE) do
+                local creatureID, name, spellID = call(GetCompanionInfo, "MOUNT", i)
+                out.sample[#out.sample + 1] = { creatureID = number(creatureID),
+                    spellID = number(spellID), name = text(name, 120) }
+            end
+        end
+    end
+    out.working = out.journalTotal ~= nil or out.companionMounts ~= nil
+    return out
+end
+
+local function toyCheck()
+    local out = {
+        apis = {
+            C_ToyBox_GetNumToys = has(C_ToyBox, "GetNumToys"),
+            C_ToyBox_GetNumLearnedDisplayedToys = has(C_ToyBox, "GetNumLearnedDisplayedToys"),
+            C_ToyBox_GetToyFromIndex = has(C_ToyBox, "GetToyFromIndex"),
+            C_ToyBox_GetToyInfo = has(C_ToyBox, "GetToyInfo"),
+            PlayerHasToy = type(PlayerHasToy) == "function",
+        },
+        idType = "itemID",
+        sample = {},
+    }
+    if out.apis.C_ToyBox_GetNumToys then out.total = number(call(C_ToyBox.GetNumToys)) end
+    if out.apis.C_ToyBox_GetNumLearnedDisplayedToys then
+        out.learnedDisplayed = number(call(C_ToyBox.GetNumLearnedDisplayedToys))
+    end
+    if out.apis.C_ToyBox_GetToyFromIndex and out.apis.PlayerHasToy then
+        for i = 1, math.min(out.total or 0, CHECK_SCAN_LIMIT) do
+            local status = toyStatus(call(C_ToyBox.GetToyFromIndex, i))
+            if status and status.owned then
+                out.sample[#out.sample + 1] = status
+                if #out.sample >= CHECK_SAMPLE then break end
+            end
+        end
+    end
+    out.working = out.total ~= nil
+    return out
+end
+
+-- The same IDs another character reported as owned, looked up again here.
+-- Owned on both characters points at an account-wide status.
+local function crossCheck(store, slot)
+    local result = {}
+    for otherSlot, other in pairs(store.characters) do
+        if otherSlot ~= slot and type(other) == "table" then
+            for _, entry in ipairs(other.achievements and other.achievements.sample or {}) do
+                local here = achievementStatus(entry.id)
+                result[#result + 1] = { category = "achievement", id = entry.id,
+                    otherCompleted = entry.completed, hereCompleted = here and here.completed,
+                    hereEarnedByThisCharacter = here and here.wasEarnedByMe }
+            end
+            for _, entry in ipairs(other.mounts and other.mounts.sample or {}) do
+                if entry.mountID then
+                    local here = mountStatus(entry.mountID)
+                    result[#result + 1] = { category = "mount", id = entry.mountID,
+                        otherCollected = entry.isCollected, hereCollected = here and here.isCollected }
+                end
+            end
+            for _, entry in ipairs(other.toys and other.toys.sample or {}) do
+                local here = toyStatus(entry.itemID)
+                result[#result + 1] = { category = "toy", id = entry.itemID,
+                    otherOwned = entry.owned, hereOwned = here and here.owned }
+            end
+        end
+    end
+    return result
+end
+
+local function collectionCheck()
+    local store = checkStore()
+    local slot = characterSlot()
+    local _, build = call(GetBuildInfo)
+    local entry = {
+        checkedAt = number(call(GetServerTime)), build = text(build, 20),
+        level = number(call(UnitLevel, "player")),
+        achievements = achievementCheck(), mounts = mountCheck(), toys = toyCheck(),
+    }
+    entry.crossCheck = crossCheck(store, slot)
+    local slots = 0
+    for _ in pairs(store.characters) do slots = slots + 1 end
+    if store.characters[slot] or slots < CHECK_CHARACTERS then store.characters[slot] = entry end
+    store.lastSlot = slot
+    store.events = collectionEvents
+    local function line(label, part, count)
+        return label .. " " .. (part.working and ("yes (" .. tostring(count) .. ")") or "not exposed")
+    end
+    message(line("achievements", entry.achievements, entry.achievements.completed) .. "; "
+        .. line("mounts", entry.mounts, entry.mounts.journalCollected or entry.mounts.companionMounts) .. "; "
+        .. line("toys", entry.toys, entry.toys.learnedDisplayed or entry.toys.total)
+        .. ". Saved on this PC only; it is not uploaded.")
+end
+
+-- One unlock: the event's own arguments, the looked-up status right away and
+-- two seconds later, and the cheap counts. Nothing about where it came from.
+local function collectionUnlock(event, category, id, extra)
+    local store = checkStore()
+    local function snapshot()
+        local status
+        if category == "achievement" then status = achievementStatus(id)
+        elseif category == "mount" then status = mountStatus(id)
+        elseif category == "toy" then status = toyStatus(id) end
+        local _, completed = call(GetNumCompletedAchievements)
+        return { status = status, completedAchievements = number(completed),
+            companionMounts = number(call(GetNumCompanions, "MOUNT")),
+            learnedToys = has(C_ToyBox, "GetNumLearnedDisplayedToys")
+                and number(call(C_ToyBox.GetNumLearnedDisplayedToys)) or nil }
+    end
+    local unlock = { event = event, category = category, id = number(id), args = extra,
+        character = characterSlot(), at = number(call(GetServerTime)),
+        countBefore = category == "mount" and lastMountCompanions or nil,
+        now = snapshot() }
+    table.insert(store.unlocks, unlock)
+    while #store.unlocks > CHECK_UNLOCKS do table.remove(store.unlocks, 1) end
+    if category == "mount" then lastMountCompanions = unlock.now.companionMounts end
+    if C_Timer and type(C_Timer.After) == "function" then
+        C_Timer.After(2, function()
+            local ok, later = pcall(snapshot)
+            if ok then unlock.later = later end
+        end)
+    end
+end
+
 local function status()
     message(string.format("%s; %s; %d/%d saved; %d dropped; %d handler errors; full text %s.",
         VERSION, db.enabled and "on" or "off", #db.records, MAX_RECORDS,
@@ -1290,11 +1562,13 @@ local function command(value)
         message("saved observations cleared on this PC.")
     elseif value == "status" or value == "" then
         status()
+    elseif value == "collections" then
+        collectionCheck()
     elseif value == "scan" then
         scheduleQuestScan()
         message("active quest objectives and available map pins queued for a local snapshot.")
     else
-        message("commands: /rrc on, off, status, scan, text on, text off, clear")
+        message("commands: /rrc on, off, status, scan, collections, text on, text off, clear")
     end
 end
 
@@ -1381,6 +1655,24 @@ local handlers = {
             db.questTextFingerprints[questKey(questID)] = nil
         end
         scheduleQuestScan()
+    end,
+    ACHIEVEMENT_EARNED = function(achievementID, alreadyEarned)
+        collectionUnlock("ACHIEVEMENT_EARNED", "achievement", achievementID, { alreadyEarned = alreadyEarned })
+    end,
+    NEW_MOUNT_ADDED = function(mountID)
+        collectionUnlock("NEW_MOUNT_ADDED", "mount", mountID)
+    end,
+    COMPANION_LEARNED = function()
+        collectionUnlock("COMPANION_LEARNED", "mount", nil)
+    end,
+    NEW_TOY_ADDED = function(itemID)
+        collectionUnlock("NEW_TOY_ADDED", "toy", itemID)
+    end,
+    TOYS_UPDATED = function(itemID, isNew, hasFanfare)
+        -- Also fires without an item when the toy list is filtered; only a new toy counts.
+        if itemID and isNew then
+            collectionUnlock("TOYS_UPDATED", "toy", itemID, { isNew = isNew, hasFanfare = hasFanfare })
+        end
     end,
     QUEST_TURNED_IN = function(questID, xpReward, moneyReward)
         record("quest_state", { event = "turned_in", id = number(questID),
@@ -1507,6 +1799,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         -- choice, so they switch on once.
         db.enabled = db.collectionChoice ~= "off"
         if type(db.captureText) ~= "boolean" then db.captureText = true end
+        if type(db.collectionCheck) == "table" then db.collectionCheck.events = collectionEvents end
         SLASH_RESTEDREALMCOLLECTOR1 = "/rrc"
         SlashCmdList.RESTEDREALMCOLLECTOR = command
         if db.enabled then message("active; /rrc status shows saved observations, /rrc off pauses it.")
@@ -1522,8 +1815,11 @@ frame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 frame:RegisterEvent("ADDON_LOADED")
+local COLLECTION_EVENTS = { ACHIEVEMENT_EARNED = true, NEW_MOUNT_ADDED = true,
+    COMPANION_LEARNED = true, NEW_TOY_ADDED = true, TOYS_UPDATED = true }
 for event in pairs(handlers) do
     local ok = pcall(frame.RegisterEvent, frame, event)
+    if COLLECTION_EVENTS[event] then collectionEvents[event] = ok end
     if event == "PLAYER_INSIDE_QUEST_BLOB_STATE_CHANGED" then
         blobEventRegistered = ok
     end

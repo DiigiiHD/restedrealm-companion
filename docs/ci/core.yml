@@ -48,6 +48,7 @@ jobs:
         run: |
           sudo apt-get install -y lua5.1
           lua5.1 tests/collector_smoke.lua addon/RestedRealmCollector/Collector.lua
+          lua5.1 tests/collection_check_smoke.lua addon/RestedRealmCollector/Collector.lua
       - name: Python companion tests
         working-directory: .
         run: python -m unittest discover -s tests -p "test_*.py" -v

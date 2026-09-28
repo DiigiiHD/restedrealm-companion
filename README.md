@@ -93,6 +93,12 @@ The API choices follow Blizzard-generated `classic_beta` interface documentation
 
 A trainer window lists only what its filter shows, and by default it hides what the character already knows, so each player reported a different part of a trainer's list. From 0.1.17 the addon briefly shows every status (available, not yet available, already known) while it reads the list, then puts the player's own filter back. Each service keeps its status. A trainer record is saved again during one visit only when the list changed. A class trainer still shows its list only to players of that class; no addon can read it for other classes.
 
+## Version 0.1.18 local collection check
+
+`/rrc collections` checks which achievement, mount and toy APIs this client exposes. It records, per character, whether each API exists, the ID type it returns (achievement ID; mount ID with spell ID, or creature and spell ID from the older companion API; toy item ID), the cheap counts, and up to three owned examples. For achievements it keeps the account-wide flag and `wasEarnedByMe`, never the earned-by name. When the addon then sees `ACHIEVEMENT_EARNED`, `NEW_MOUNT_ADDED`, `COMPANION_LEARNED`, `NEW_TOY_ADDED` or `TOYS_UPDATED` with a new toy, it notes the event's arguments and the unlocked ID's status right away and two seconds later, keeping the last 20 unlocks. Running the check on a second character looks up the first character's examples again; the same status on both points at an account-wide collection.
+
+The result is kept in `RestedRealmCollectorDB.collectionCheck`, beside `records`. RestedRealm Companion imports and uploads `records` only, and its rollover keeps this table, so the check stays on the player's PC. The website has no collection observation kind yet. The check never scans on login, and it does not guess where an unlock came from. Characters are told apart by a local hash of the character GUID, not by name. The check has passed local tests but has not yet been run in the Forever client.
+
 ## License
 
 The addon, companion, tools and tests in this repository are released under the [MIT License](LICENSE). The license covers this project's own source code only. World of Warcraft game content and data, including any quest or NPC text a local save captures, remain Blizzard's and are not licensed here. Local queues, game saves, credentials and backups stay private and are never part of the repository.

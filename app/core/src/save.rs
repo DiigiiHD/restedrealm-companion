@@ -360,6 +360,25 @@ pub(crate) mod tests {
         assert_eq!(fs::read_dir(f.queue.state.join("Backups")).unwrap().count(), 1);
     }
 
+    #[test]
+    fn the_local_collection_check_is_never_queued_and_survives_rollover() {
+        let mut f = Fixture::new();
+        let save = sample(1, "First").replacen(
+            "[\"schema\"] = 1,",
+            "[\"schema\"] = 1, [\"collectionCheck\"] = { [\"schema\"] = 1, [\"characters\"] = { [\"c0badcafe\"] = { [\"mounts\"] = { [\"working\"] = true, [\"journalCollected\"] = 1 } } }, [\"unlocks\"] = { { [\"event\"] = \"NEW_MOUNT_ADDED\", [\"id\"] = 102 } } },",
+            1,
+        );
+        assert!(save.contains("collectionCheck"));
+        f.write(&save);
+        assert_eq!(f.scan().unwrap().new, 1);
+        assert_eq!(f.count(), 1, "only db.records reach the queue");
+        assert_eq!(compact_one(&f.queue, &f.path, Duration::ZERO, &|| false).unwrap(), 1);
+        let after = parse_save(&fs::read_to_string(&f.path).unwrap()).unwrap();
+        assert!(after.get("records").unwrap().is_empty_map());
+        let check = after.get("collectionCheck").expect("the check stays in the game save");
+        assert!(matches!(check.get("unlocks"), Some(Value::List(list)) if list.len() == 1));
+    }
+
     /// A full addon save: 5,000 records with quest text, items and objectives.
     fn full_save() -> String {
         let text = "Greetings, <name>. ".repeat(55);

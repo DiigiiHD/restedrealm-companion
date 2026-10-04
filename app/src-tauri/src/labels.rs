@@ -22,6 +22,7 @@ pub fn kind_label(kind: &str) -> String {
         "quest_reputation" => "Quest reputation",
         "quest_state" => "Quest progress",
         "recipe" => "Recipe",
+        "spell_tooltip" => "Spell description",
         "taxi_map" => "Flight map",
         "trainer" => "Trainer skills",
         "trainer_window" => "Trainer window",
@@ -46,12 +47,21 @@ pub fn kind_group(kind: &str) -> &'static str {
         "loot_window" | "loot_slot_cleared" | "item_count_increase" => "Items and loot",
         "profession_catalog" | "profession_opened" | "recipe" => "Professions",
         "taxi_map" => "Travel",
+        "spell_tooltip" => "Spells",
         _ => "Other",
     }
 }
 
-pub const GROUP_ORDER: &[&str] =
-    &["Quests", "Creatures and NPCs", "Merchants and trainers", "Items and loot", "Professions", "Travel", "Other"];
+pub const GROUP_ORDER: &[&str] = &[
+    "Quests",
+    "Creatures and NPCs",
+    "Merchants and trainers",
+    "Items and loot",
+    "Professions",
+    "Spells",
+    "Travel",
+    "Other",
+];
 
 #[cfg(test)]
 mod tests {
@@ -63,6 +73,8 @@ mod tests {
         assert_eq!(kind_label("new_thing"), "New thing");
         assert_eq!(kind_group("quest_state"), "Quests");
         assert_eq!(kind_group("gossip_poi"), "Creatures and NPCs");
+        assert_eq!(kind_label("spell_tooltip"), "Spell description");
+        assert_eq!(kind_group("spell_tooltip"), "Spells");
         assert!(GROUP_ORDER.contains(&kind_group("anything")));
     }
 }

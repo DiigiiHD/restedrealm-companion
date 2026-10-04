@@ -445,8 +445,138 @@ frame.callback(frame, "QUEST_DETAIL")
 local plainRole = RestedRealmCollectorDB.records[#RestedRealmCollectorDB.records]
 assert(plainRole.data.npc.subtitle == "Paladin Trainer")
 assert(plainRole.data.npc.subtitleSource == "tooltip_role_before_level")
+-- Spell tooltips: the spellbook's descriptions as the game shows them.
+local spellBefore = #RestedRealmCollectorDB.records
+local function spellRecords()
+    local found = {}
+    for i = spellBefore + 1, #RestedRealmCollectorDB.records do
+        local entry = RestedRealmCollectorDB.records[i]
+        if entry.kind == "spell_tooltip" then found[#found + 1] = entry end
+    end
+    spellBefore = #RestedRealmCollectorDB.records
+    return found
+end
+local savedName, savedRace, savedClass, savedLevel = UnitName, UnitRace, UnitClass, UnitLevel
+UnitName = function(unit) if unit == "player" then return "Aerith" end return savedName(unit) end
+UnitRace = function(unit) if unit == "player" then return "Undead", "Scourge" end end
+UnitClass = function(unit) if unit == "player" then return "Priest", "PRIEST" end end
+local playerLevel = 30
+UnitLevel = function(unit) if unit == "player" then return playerLevel end return savedLevel(unit) end
+local playerGuid = "Player-1-0000000A"
+local savedGuid = UnitGUID
+UnitGUID = function(unit) if unit == "player" then return playerGuid end return savedGuid(unit) end
+-- The older spellbook API, and no C_Spell: GetSpellDescription is the fallback.
+C_Spell, C_SpellBook = nil, nil
+GetNumSpellTabs = function() return 1 end
+GetSpellTabInfo = function() return "Shadow", nil, 0, 4 end
+local book = { { "SPELL", 1277325 }, { "SPELL", 589 }, { "FUTURESPELL", 8092 }, { "FLYOUT", 1 } }
+GetSpellBookItemInfo = function(slot) return book[slot][1], book[slot][2] end
+local descriptions = {
+    [1277325] = "Cannibalize 680 of your own Health over 15 sec to gain (680 + Spirit) Mana, Aerith.",
+    [589] = "A word of darkness that causes 30 Shadow damage over 18 sec.",
+    [8092] = "Not known yet.",
+}
+GetSpellDescription = function(id) return descriptions[id] end
+GetSpellSubtext = function(id) if id == 1277325 then return "Rank 2" end end
+GetNumTalentTabs = function() return 3 end
+GetTalentTabInfo = function(tab) return "Tree " .. tab, "icon", ({ 0, 5, 11 })[tab] end
+local inCombat = false
+InCombatLockdown = function() return inCombat end
+
+frame.callback(frame, "SPELLS_CHANGED")
+frame.callback(frame, "SPELLS_CHANGED")
+flushTimer()
+local spells = spellRecords()
+assert(#spells == 2, "two known spells; the future spell and the flyout are left out")
+local dark = spells[1]
+assert(dark.textSchema == 1 and dark.data.spellId == 1277325 and dark.data.rank == "Rank 2")
+assert(dark.data.text == "Cannibalize 680 of your own Health over 15 sec to gain (680 + Spirit) Mana, <name>.", dark.data.text)
+assert(dark.data.level == 30 and dark.data.class == "PRIEST" and dark.data.race == "Scourge")
+assert(dark.data.source == "GetSpellDescription" and dark.data.talentPoints[3] == 11)
+assert(spells[2].data.rank == nil)
+
+-- The same text again: nothing. A level-up that changes no text: nothing.
+frame.callback(frame, "LEARNED_SPELL_IN_TAB")
+flushTimer()
+assert(#spellRecords() == 0)
+playerLevel = 31
+frame.callback(frame, "SPELLS_CHANGED")
+flushTimer()
+assert(#spellRecords() == 0, "a level change alone records nothing")
+-- A level-up that changes a number changes the text: that spell only.
+descriptions[589] = "A word of darkness that causes 36 Shadow damage over 18 sec."
+frame.callback(frame, "SPELLS_CHANGED")
+flushTimer()
+spells = spellRecords()
+assert(#spells == 1 and spells[1].data.spellId == 589 and spells[1].data.level == 31)
+
+-- An empty description is not recorded; it is tried again on the next scan.
+book[5] = { "SPELL", 17 }
+GetSpellTabInfo = function() return "Shadow", nil, 0, 5 end
+descriptions[17] = ""
+frame.callback(frame, "SPELLS_CHANGED")
+flushTimer()
+assert(#spellRecords() == 0)
+descriptions[17] = "Absorbs 48 damage."
+frame.callback(frame, "SPELLS_CHANGED")
+flushTimer()
+spells = spellRecords()
+assert(#spells == 1 and spells[1].data.spellId == 17)
+
+-- Never during combat: the scan waits until combat ends.
+descriptions[17] = "Absorbs 52 damage."
+inCombat = true
+frame.callback(frame, "SPELLS_CHANGED")
+flushTimer()
+assert(#spellRecords() == 0)
+inCombat = false
+frame.callback(frame, "PLAYER_REGEN_ENABLED")
+flushTimer()
+assert(#spellRecords() == 1)
+
+-- Another character records its own spellbook once; coming back records nothing.
+playerGuid = "Player-1-0000000B"
+frame.callback(frame, "SPELLS_CHANGED")
+flushTimer()
+assert(#spellRecords() == 3)
+playerGuid = "Player-1-0000000A"
+frame.callback(frame, "SPELLS_CHANGED")
+flushTimer()
+assert(#spellRecords() == 0)
+
+-- The newer API: C_SpellBook and C_Spell, flyouts and future spells left out.
+GetNumSpellTabs, GetSpellTabInfo, GetSpellBookItemInfo, GetSpellDescription = nil, nil, nil, nil
+Enum = { SpellBookItemType = { Spell = 1, FutureSpell = 2, Flyout = 3 }, SpellBookSpellBank = { Player = 0 } }
+local items = { { itemType = 1, spellID = 2050 }, { itemType = 2, spellID = 2060 }, { itemType = 3, spellID = 9 } }
+C_SpellBook = {
+    GetNumSpellBookSkillLines = function() return 1 end,
+    GetSpellBookSkillLineInfo = function() return { itemIndexOffset = 0, numSpellBookItems = 3 } end,
+    GetSpellBookItemInfo = function(index) return items[index] end,
+}
+local requested = {}
+C_Spell = {
+    GetSpellDescription = function(id) if id == 2050 then return "Heals for 51." end return "" end,
+    GetSpellSubtext = function() return "Rank 1" end,
+    RequestLoadSpellData = function(id) requested[id] = true end,
+}
+frame.callback(frame, "SPELLS_CHANGED")
+flushTimer()
+spells = spellRecords()
+assert(#spells == 1 and spells[1].data.spellId == 2050 and spells[1].data.source == "C_Spell.GetSpellDescription")
+assert(spells[1].data.rank == "Rank 1" and not requested[2060] and not requested[9])
+
+-- Full text capture off: no spell text is recorded at all.
+SlashCmdList.RESTEDREALMCOLLECTOR("text off")
+C_Spell.GetSpellDescription = function() return "Heals for 60." end
+frame.callback(frame, "SPELLS_CHANGED")
+flushTimer()
+assert(#spellRecords() == 0)
+SlashCmdList.RESTEDREALMCOLLECTOR("text on")
+UnitName, UnitRace, UnitClass, UnitLevel, UnitGUID = savedName, savedRace, savedClass, savedLevel, savedGuid
+C_Spell, C_SpellBook, Enum, InCombatLockdown = nil, nil, nil, nil
 SlashCmdList.RESTEDREALMCOLLECTOR("clear")
 assert(#RestedRealmCollectorDB.records == 0)
 assert(RestedRealmCollectorDB.sightingCount == 0)
 assert(next(RestedRealmCollectorDB.questFingerprints) == nil)
+assert(next(RestedRealmCollectorDB.spellTextFingerprints) == nil)
 print("collector smoke passed")

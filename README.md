@@ -99,6 +99,12 @@ A trainer window lists only what its filter shows, and by default it hides what 
 
 The result is kept in `RestedRealmCollectorDB.collectionCheck`, beside `records`. RestedRealm Companion imports and uploads `records` only, and its rollover keeps this table, so the check stays on the player's PC. The website has no collection observation kind yet. The check never scans on login, and it does not guess where an unlock came from. Characters are told apart by a local hash of the character GUID, not by name. The check has passed local tests but has not yet been run in the Forever client.
 
+## Version 0.1.19 spell descriptions
+
+The addon records the description of each spell the character knows, as the game shows it (`C_Spell.GetSpellDescription`, or `GetSpellDescription` on older clients), in a `spell_tooltip` record with the spell ID, rank, level, class and race tokens, and the talent points spent per tree. The website compares these with the descriptions it works out from the game files and lists the spells that differ. The request is in [docs/WEBSITE-REQUEST-SPELL-TOOLTIPS.md](docs/WEBSITE-REQUEST-SPELL-TOOLTIPS.md).
+
+It is game text, so it goes through the same path as quest text: it needs full text capture on, the player's name, race and class are replaced, and the record carries `textSchema`. A spell is recorded again only when its text or the build changes, per character; a level-up that changes a number changes the text, one that does not records nothing. The first scan after login writes one record per known spell, later scans only changes. Scans wait two seconds after the last spellbook event and never run in combat. Flyouts and spells not learned yet are left out; passive spells stay in. An empty description is asked for again and recorded on a later scan. Talents and gear can change tooltip numbers, so a difference from the website is a lead to check, not proof. Not yet run in the Forever client.
+
 ## License
 
 The addon, companion, tools and tests in this repository are released under the [MIT License](LICENSE). The license covers this project's own source code only. World of Warcraft game content and data, including any quest or NPC text a local save captures, remain Blizzard's and are not licensed here. Local queues, game saves, credentials and backups stay private and are never part of the repository.

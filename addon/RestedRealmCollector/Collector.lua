@@ -1,6 +1,6 @@
 -- RestedRealm Forever collection probe. No gameplay actions or network access.
 local ADDON = ...
-local VERSION = "0.1.18"
+local VERSION = "0.1.19"
 local IDENTITY_SCHEMA = 2
 -- 1: player name, race and class in captured text are replaced by <name>,
 -- <race> and <class>. Only records carrying this may upload their text.
@@ -1525,6 +1525,152 @@ local function collectionUnlock(event, category, id, extra)
     end
 end
 
+-- Spell tooltips as the game shows them, so the website can compare them with
+-- the descriptions it works out from the game files. Game text, so it goes
+-- through longText like quest text and carries textSchema.
+-- A spell is recorded again only when its text or the build changes, per
+-- character: a level-up that changes a number changes the text, and one that
+-- does not changes nothing. Scans wait for event bursts to settle and never
+-- run in combat.
+local MAX_SPELLBOOK_SCAN = 1000
+local SPELL_SCAN_DELAY = 2
+local spellScanGeneration = 0
+local spellScanAfterCombat = false
+local spellsScannedAtLogin = false
+
+local function textHash(value)
+    local h = 5381
+    for i = 1, #value do h = (h * 33 + string.byte(value, i)) % 4294967296 end
+    return string.format("%08x", h)
+end
+
+-- Spell IDs the character knows, from the newer or the older spellbook API.
+-- Flyouts and spells not yet learned are left out; passive spells stay in.
+local function knownSpellIDs()
+    local ids, seen = {}, {}
+    local function add(id)
+        id = number(id)
+        if id and id > 0 and not seen[id] and #ids < MAX_SPELLBOOK_SCAN then
+            seen[id] = true
+            ids[#ids + 1] = id
+        end
+    end
+    local book = C_SpellBook
+    local enum = type(Enum) == "table" and Enum or {}
+    local itemTypes = type(enum.SpellBookItemType) == "table" and enum.SpellBookItemType or {}
+    local bank = type(enum.SpellBookSpellBank) == "table" and enum.SpellBookSpellBank.Player or 0
+    if has(book, "GetNumSpellBookSkillLines") and has(book, "GetSpellBookSkillLineInfo")
+        and has(book, "GetSpellBookItemInfo") and itemTypes.Spell ~= nil then
+        for line = 1, number(call(book.GetNumSpellBookSkillLines)) or 0 do
+            local info = call(book.GetSpellBookSkillLineInfo, line)
+            if type(info) == "table" then
+                local offset = number(info.itemIndexOffset) or 0
+                for index = offset + 1, offset + (number(info.numSpellBookItems) or 0) do
+                    local item = call(book.GetSpellBookItemInfo, index, bank)
+                    if type(item) == "table" and item.itemType == itemTypes.Spell then add(item.spellID) end
+                end
+            end
+        end
+        return ids
+    end
+    if type(GetNumSpellTabs) == "function" and type(GetSpellTabInfo) == "function"
+        and type(GetSpellBookItemInfo) == "function" then
+        for tab = 1, number(call(GetNumSpellTabs)) or 0 do
+            local _, _, offset, slots = call(GetSpellTabInfo, tab)
+            offset, slots = number(offset) or 0, number(slots) or 0
+            for slot = offset + 1, offset + slots do
+                local kind, spellID = call(GetSpellBookItemInfo, slot, "spell")
+                if kind == "SPELL" then add(spellID) end
+            end
+        end
+    end
+    return ids
+end
+
+local function spellDescription(spellID)
+    if has(C_Spell, "GetSpellDescription") then
+        return call(C_Spell.GetSpellDescription, spellID), "C_Spell.GetSpellDescription"
+    end
+    return call(GetSpellDescription, spellID), "GetSpellDescription"
+end
+
+local function spellRank(spellID)
+    if has(C_Spell, "GetSpellSubtext") then return call(C_Spell.GetSpellSubtext, spellID) end
+    return call(GetSpellSubtext, spellID)
+end
+
+-- Points spent per talent tree. Talents change tooltip numbers, so the website
+-- needs them to tell a talent bonus from a wrong description.
+local function talentPoints()
+    if type(GetNumTalentTabs) ~= "function" or type(GetTalentTabInfo) ~= "function" then return nil end
+    local points = {}
+    for tab = 1, math.min(number(call(GetNumTalentTabs)) or 0, 5) do
+        local info = { call(GetTalentTabInfo, tab) }
+        -- Classic Era returns name, icon, points; later clients id, name,
+        -- description, icon, points.
+        points[tab] = number(info[3]) or number(info[5])
+    end
+    return points
+end
+
+local function scanSpellTooltips()
+    if not db or not db.enabled or not db.captureText then return end
+    if call(InCombatLockdown) then
+        spellScanAfterCombat = true
+        return
+    end
+    spellScanAfterCombat = false
+    local _, build = call(GetBuildInfo)
+    build = tostring(build or "")
+    local slot = characterSlot()
+    if type(db.spellTextFingerprints) ~= "table" then db.spellTextFingerprints = {} end
+    local seen = db.spellTextFingerprints[slot]
+    if type(seen) ~= "table" then
+        seen = {}
+        db.spellTextFingerprints[slot] = seen
+    end
+    local level = number(call(UnitLevel, "player"))
+    local _, classToken = call(UnitClass, "player")
+    local _, raceToken = call(UnitRace, "player")
+    local talents = talentPoints()
+    for _, spellID in ipairs(knownSpellIDs()) do
+        local description, source = spellDescription(spellID)
+        if type(description) == "string" and description ~= "" then
+            local data = { spellId = spellID, rank = text(spellRank(spellID), 60),
+                level = level, class = text(classToken, 32), race = text(raceToken, 32),
+                talentPoints = talents, source = source }
+            longText(data, "text", description)
+            if type(data.text) == "string" and data.text ~= "" then
+                local digest = textHash(data.text) .. ":" .. build
+                if seen[spellID] ~= digest then
+                    local before = #db.records
+                    record("spell_tooltip", data)
+                    if #db.records > before then seen[spellID] = digest end
+                end
+            end
+        elseif has(C_Spell, "RequestLoadSpellData") then
+            -- Some descriptions load lazily; ask now, record on a later scan.
+            call(C_Spell.RequestLoadSpellData, spellID)
+        end
+    end
+end
+
+-- One scan per burst of spellbook events, a moment after the last one.
+local function scheduleSpellScan()
+    spellScanGeneration = spellScanGeneration + 1
+    local generation = spellScanGeneration
+    if not (C_Timer and type(C_Timer.After) == "function") then
+        local ok = pcall(scanSpellTooltips)
+        if not ok and db then db.errors = (db.errors or 0) + 1 end
+        return
+    end
+    C_Timer.After(SPELL_SCAN_DELAY, function()
+        if generation ~= spellScanGeneration then return end
+        local ok = pcall(scanSpellTooltips)
+        if not ok and db then db.errors = (db.errors or 0) + 1 end
+    end)
+end
+
 local function status()
     message(string.format("%s; %s; %d/%d saved; %d dropped; %d handler errors; full text %s.",
         VERSION, db.enabled and "on" or "off", #db.records, MAX_RECORDS,
@@ -1553,6 +1699,7 @@ local function command(value)
         db.questFingerprints = {}
         db.questRepFingerprints = {}
         db.questTextFingerprints = {}
+        db.spellTextFingerprints = {}
         db.recipeFingerprints = {}
         db.professionFingerprints = {}
         db.sightingKeys = {}
@@ -1619,7 +1766,18 @@ local handlers = {
     end,
     LOOT_CLOSED = function() lootSlots = {}; lastLootDigest = nil end,
     BAG_UPDATE_DELAYED = checkPendingLoot,
-    PLAYER_ENTERING_WORLD = scheduleQuestScan,
+    PLAYER_ENTERING_WORLD = function()
+        scheduleQuestScan()
+        if not spellsScannedAtLogin then
+            spellsScannedAtLogin = true
+            scheduleSpellScan()
+        end
+    end,
+    SPELLS_CHANGED = scheduleSpellScan,
+    LEARNED_SPELL_IN_TAB = scheduleSpellScan,
+    PLAYER_REGEN_ENABLED = function()
+        if spellScanAfterCombat then scheduleSpellScan() end
+    end,
     PLAYER_TARGET_CHANGED = targetSighting,
     QUEST_LOG_UPDATE = scheduleQuestScan,
     QUEST_ACCEPTED = function(questIndex, questID)
@@ -1781,6 +1939,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
             db.questTextFingerprints = {}
             db.textSchema = TEXT_SCHEMA
         end
+        if type(db.spellTextFingerprints) ~= "table" then db.spellTextFingerprints = {} end
         if type(db.recipeFingerprints) ~= "table" then db.recipeFingerprints = {} end
         if type(db.professionFingerprints) ~= "table" then db.professionFingerprints = {} end
         if type(db.sightingKeys) ~= "table" then db.sightingKeys = {} end

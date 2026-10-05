@@ -26,7 +26,7 @@ turns a few trainer visits into a check of every spell page on the site.
 token, cached for an hour) returns:
 
 ```json
-{ "build": "1.60.1.70205", "listVersion": "1.60.1.70205-7", "packSize": 200, "spells": [17, 116, 120, "... about 13,000 IDs"] }
+{ "build": "1.60.1.70205", "listVersion": "1.60.1.70205-7", "packSize": 200, "spells": [17, 116, 120, "... about 14,500 IDs"] }
 ```
 
 These are the spells whose descriptions contain numbers the website works out
@@ -58,7 +58,7 @@ numbers), while the player is idle and out of combat:
 
 - `level`, `class`, `race`, `talentPoints`: as `spell_tooltip` sends them.
 - `entries`: at most 200 per record (the website accepts up to 300 per array and
-  1 MB per batch). About 13,000 spells is about 66 records, well under the
+  1 MB per batch). About 14,500 spells is about 73 records, well under the
   website's limit of 5,000 records per device per day.
 - Already accepted by the website since 5 October 2026 (test:
   `tests/collector-intake.test.mjs`, "a spell scan pack of 200 descriptions").

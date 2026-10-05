@@ -1,6 +1,6 @@
 -- RestedRealm Forever collection probe. No gameplay actions or network access.
 local ADDON = ...
-local VERSION = "0.1.19"
+local VERSION = "0.1.20"
 local IDENTITY_SCHEMA = 2
 -- 1: player name, race and class in captured text are replaced by <name>,
 -- <race> and <class>. Only records carrying this may upload their text.
@@ -24,7 +24,6 @@ local lastLootDigest
 local collectionScope
 local lastGossipNPC, lastGossipAt, lastGossipOptions
 local lastGossipPoiDigest
-local lastEmptyTrainerKey, lastEmptyTrainerAt
 local gossipHooksInstalled = false
 local scannerTooltip
 local blobEventRegistered = false
@@ -534,8 +533,16 @@ end
 -- already knows). Show every status while reading, then put the player's
 -- filter back. Changing the filter fires TRAINER_UPDATE, which must not
 -- start another read.
+--
+-- Some clients fill the list a moment after TRAINER_SHOW, so a visit looks
+-- again 0.5 and 1.5 seconds later, and an update during the quiet period after
+-- our own filter change is read once that period ends if the count changed.
+-- An empty-window record is written only when the list stays empty, with
+-- what each look returned.
 local TRAINER_STATUSES = { "available", "unavailable", "used" }
+local TRAINER_RECHECKS = { 0.5, 1.5 }
 local readingTrainer, trainerQuietUntil, lastTrainerDigest = false, nil, nil
+local trainerVisit, trainerDeferred, lastTrainerCount
 
 local function showAllTrainerServices()
     if type(GetTrainerServiceTypeFilter) ~= "function" or type(SetTrainerServiceTypeFilter) ~= "function" then
@@ -556,21 +563,10 @@ local function restoreTrainerFilter(hidden)
     for _, status in ipairs(hidden or {}) do call(SetTrainerServiceTypeFilter, status, 0) end
 end
 
+-- Records the list when there is one; returns the service count it saw.
 local function readTrainer(hidden)
     local count = number(call(GetNumTrainerServices))
-    if not count or count <= 0 then
-        local npc = interaction()
-        local key = tostring(npc.id) .. ":" .. tostring(count)
-        local now = number(call(GetServerTime))
-        if key ~= lastEmptyTrainerKey or not now or not lastEmptyTrainerAt
-            or now - lastEmptyTrainerAt > 30 then
-            record("trainer_window", { npc = npc, shownCount = count,
-                serviceCountAPI = type(GetNumTrainerServices) == "function",
-                meaning = "trainer_event_without_visible_services" })
-            lastEmptyTrainerKey, lastEmptyTrainerAt = key, now
-        end
-        return
-    end
+    if not count or count <= 0 then return count end
     local data = { npc = interaction(), shownCount = count,
         allStatuses = hidden ~= nil, filterWasHiding = hidden and #hidden > 0 or nil,
         truncated = count > MAX_TRAINER_SERVICES, services = {} }
@@ -592,22 +588,92 @@ local function readTrainer(hidden)
         parts[#parts + 1] = tostring(service.name) .. "=" .. tostring(service.status)
     end
     local digest = table.concat(parts, "|")
-    if digest == lastTrainerDigest then return end
+    if digest == lastTrainerDigest then return count end
     lastTrainerDigest = digest
     record("trainer", data)
+    return count
 end
 
-local function trainer()
+local function readTrainerNow(reason)
     if readingTrainer then return end
-    local now = number(call(GetTime))
-    if trainerQuietUntil and now and now < trainerQuietUntil then return end
     readingTrainer = true
     local hidden = showAllTrainerServices()
-    local ok, problem = pcall(readTrainer, hidden)
+    local ok, count = pcall(readTrainer, hidden)
     restoreTrainerFilter(hidden)
+    lastTrainerCount = number(call(GetNumTrainerServices))
     readingTrainer = false
+    local now = number(call(GetTime))
     if hidden and #hidden > 0 and now then trainerQuietUntil = now + 0.5 end
-    if not ok then error(problem, 0) end
+    local visit = trainerVisit
+    if visit then
+        if #visit.attempts < 10 then
+            visit.attempts[#visit.attempts + 1] = { at = reason, count = ok and count or nil,
+                filterHidden = hidden and #hidden or nil }
+        end
+        if ok and count and count > 0 then visit.gotList = true end
+    end
+    if not ok then error(count, 0) end
+end
+
+local function reportEmptyTrainer()
+    local visit = trainerVisit
+    if not visit or visit.gotList or visit.reported then return end
+    visit.reported = true
+    local last = visit.attempts[#visit.attempts]
+    record("trainer_window", { npc = visit.npc, shownCount = last and last.count,
+        serviceCountAPI = type(GetNumTrainerServices) == "function",
+        filterAPI = type(SetTrainerServiceTypeFilter) == "function",
+        attempts = visit.attempts,
+        meaning = "trainer_event_without_visible_services" })
+end
+
+local function trainerRecheck(step)
+    local visit = trainerVisit
+    if not (C_Timer and type(C_Timer.After) == "function") then
+        reportEmptyTrainer()
+        return
+    end
+    C_Timer.After(TRAINER_RECHECKS[step] - (TRAINER_RECHECKS[step - 1] or 0), function()
+        if not visit or trainerVisit ~= visit or visit.gotList then return end
+        local ok = pcall(readTrainerNow, "after " .. TRAINER_RECHECKS[step] .. "s")
+        if not ok and db then db.errors = (db.errors or 0) + 1 end
+        if visit.gotList then return end
+        if TRAINER_RECHECKS[step + 1] then trainerRecheck(step + 1) else reportEmptyTrainer() end
+    end)
+end
+
+local function trainerShow()
+    trainerVisit = { npc = interaction(), attempts = {} }
+    lastTrainerDigest = nil
+    readTrainerNow("show")
+    if not trainerVisit.gotList then trainerRecheck(1) end
+end
+
+local function trainerUpdate()
+    if readingTrainer then return end
+    local now = number(call(GetTime))
+    if trainerQuietUntil and now and now < trainerQuietUntil then
+        -- Our own filter change, or the real list arriving. Look once the quiet
+        -- period ends, and read only if the count changed, so our own filter
+        -- changes never start a loop.
+        if not trainerDeferred and C_Timer and type(C_Timer.After) == "function" then
+            trainerDeferred = true
+            C_Timer.After(trainerQuietUntil - now + 0.05, function()
+                trainerDeferred = false
+                if number(call(GetNumTrainerServices)) ~= lastTrainerCount then
+                    local ok = pcall(readTrainerNow, "update")
+                    if not ok and db then db.errors = (db.errors or 0) + 1 end
+                end
+            end)
+        end
+        return
+    end
+    readTrainerNow("update")
+end
+
+local function trainerClosed()
+    reportEmptyTrainer()
+    trainerVisit, lastTrainerDigest = nil, nil
 end
 
 local function professionOpened()
@@ -1671,10 +1737,228 @@ local function scheduleSpellScan()
     end)
 end
 
+-- Background spell check (spell_scan). RestedRealm Companion writes the list of
+-- spell IDs the website checks into SpellScanList.lua. Once per list version
+-- and character level, while out of combat, the addon reads each description
+-- in small steps (25 every 0.1 seconds, about a minute for the whole list) and
+-- records them in packs. The first scan of a list version sends every
+-- description; a later level only sends the ones whose text changed, and the
+-- closing pack says how many were checked and unchanged. Game text, so it is
+-- sanitized like quest text and nothing is scanned with text capture off.
+local SCAN_STEP = 25
+local SCAN_INTERVAL = 0.1
+local SCAN_START_DELAY = 20
+local SCAN_LEVEL_DELAY = 5
+local SCAN_RETRY_DELAY = 2
+local SCAN_MAX_PACK = 200
+-- The website takes at most 100,000 characters per record.
+local SCAN_PACK_CHARS = 60000
+local SCAN_SLOTS = 5
+local scan
+
+local function scanList()
+    local list = RestedRealmSpellScanList
+    if type(list) ~= "table" or type(list.spells) ~= "table" or type(list.listVersion) ~= "string" then return nil end
+    return list
+end
+
+local function scanState(slot)
+    if type(db.spellScan) ~= "table" then db.spellScan = {} end
+    if type(db.spellScanHashes) ~= "table" then db.spellScanHashes = {} end
+    if not db.spellScan[slot] then
+        -- Keep a few characters' fingerprints; drop the one scanned longest ago.
+        local slots, oldest, oldestAt = 0, nil, nil
+        for other, state in pairs(db.spellScan) do
+            slots = slots + 1
+            local at = type(state) == "table" and number(state.at) or 0
+            if not oldestAt or at < oldestAt then oldest, oldestAt = other, at end
+        end
+        if slots >= SCAN_SLOTS and oldest then
+            db.spellScan[oldest], db.spellScanHashes[oldest] = nil, nil
+        end
+        db.spellScan[slot] = {}
+    end
+    if type(db.spellScanHashes[slot]) ~= "table" then db.spellScanHashes[slot] = {} end
+    return db.spellScan[slot], db.spellScanHashes[slot]
+end
+
+local function scanAllowed()
+    return db and db.enabled and db.captureText and playerWords() ~= nil
+end
+
+local function inCombat()
+    return call(InCombatLockdown) or call(UnitAffectingCombat, "player")
+end
+
+-- Write the pack gathered so far. The fingerprints and the resume point move
+-- on only once the record is saved.
+local function flushScan(final)
+    local run = scan
+    if #run.entries == 0 and not final then return true end
+    local _, classToken = call(UnitClass, "player")
+    local _, raceToken = call(UnitRace, "player")
+    local data = { listVersion = run.listVersion, level = run.level,
+        class = text(classToken, 32), race = text(raceToken, 32),
+        talentPoints = talentPoints(), entries = run.entries }
+    if final then
+        data.complete = true
+        data.checked = run.state.checked + run.checked
+        data.unchanged = run.state.unchanged + run.unchanged
+        data.empty = run.empty
+        data.listSize = run.listSize
+    end
+    local before = #db.records
+    record("spell_scan", data)
+    if #db.records == before then return false end
+    for id, hash in pairs(run.pendingHashes) do run.hashes[id] = hash end
+    run.state.checked = run.state.checked + run.checked
+    run.state.unchanged = run.state.unchanged + run.unchanged
+    -- During the second look the main list is finished.
+    run.state.next = run.retryPass and run.listSize + 1 or run.cursor
+    run.state.at = number(call(GetServerTime))
+    run.entries, run.chars, run.pendingHashes, run.checked, run.unchanged = {}, 0, {}, 0, 0
+    return true
+end
+
+local scanStep
+
+local function scanLater(delay)
+    if C_Timer and type(C_Timer.After) == "function" then
+        local run = scan
+        C_Timer.After(delay, function()
+            if scan == run then scanStep() end
+        end)
+    end
+end
+
+local function scanOne(id)
+    local run = scan
+    local description = spellDescription(id)
+    if type(description) ~= "string" or description == "" then
+        return false
+    end
+    local value = sanitize(text(description))
+    if type(value) ~= "string" or value == "" then return true end
+    run.checked = run.checked + 1
+    local hash = textHash(value)
+    if run.hashes[id] == hash then
+        run.unchanged = run.unchanged + 1
+        return true
+    end
+    run.entries[#run.entries + 1] = { spellId = id, text = value }
+    run.chars = run.chars + #value
+    run.pendingHashes[id] = hash
+    return true
+end
+
+scanStep = function()
+    local run = scan
+    if not run or run.paused then return end
+    if not scanAllowed() then
+        scan = nil
+        return
+    end
+    if inCombat() then
+        run.paused = true
+        return
+    end
+    local packSize = run.packSize
+    local stop = math.min(run.cursor + SCAN_STEP - 1, #run.spells)
+    while run.cursor <= stop do
+        local id = number(run.spells[run.cursor])
+        run.cursor = run.cursor + 1
+        if id and not scanOne(id) then
+            -- Not loaded yet: ask for it and look again at the end.
+            if has(C_Spell, "RequestLoadSpellData") then call(C_Spell.RequestLoadSpellData, id) end
+            run.retry[#run.retry + 1] = id
+        end
+        if #run.entries >= packSize or run.chars >= SCAN_PACK_CHARS then
+            if not flushScan(false) then
+                scan = nil
+                return
+            end
+        end
+    end
+    if run.cursor <= #run.spells then
+        scanLater(SCAN_INTERVAL)
+        return
+    end
+    if not run.retried and #run.retry > 0 then
+        -- One more look at the spells that had not loaded, after a pause.
+        run.retried = true
+        run.spells, run.retry = run.retry, {}
+        run.cursor = 1
+        run.retryPass = true
+        scanLater(SCAN_RETRY_DELAY)
+        return
+    end
+    run.empty = #run.retry
+    if flushScan(true) then
+        run.state.done = true
+        run.state.next = nil
+    end
+    scan = nil
+end
+
+local function startSpellScan()
+    if scan or not scanAllowed() then return end
+    local list = scanList()
+    if not list then return end
+    local level = number(call(UnitLevel, "player"))
+    local slot = characterSlot()
+    local state, hashes = scanState(slot)
+    if state.listVersion ~= list.listVersion then
+        -- A new list (new build or catalog): every description is sent again.
+        for key in pairs(hashes) do hashes[key] = nil end
+        for key in pairs(state) do state[key] = nil end
+        state.listVersion = list.listVersion
+    end
+    if state.level ~= level then
+        state.level, state.next, state.done = level, nil, nil
+    end
+    if state.done then return end
+    if not state.next then state.next, state.checked, state.unchanged = 1, 0, 0 end
+    local packSize = number(list.packSize) or SCAN_MAX_PACK
+    if packSize < 1 or packSize > SCAN_MAX_PACK then packSize = SCAN_MAX_PACK end
+    scan = { listVersion = list.listVersion, level = level, spells = list.spells,
+        cursor = state.next, listSize = #list.spells, packSize = packSize, state = state, hashes = hashes,
+        entries = {}, chars = 0, pendingHashes = {}, checked = 0, unchanged = 0, retry = {} }
+    scanLater(SCAN_INTERVAL)
+end
+
+local function scheduleSpellCheck(delay)
+    if C_Timer and type(C_Timer.After) == "function" then
+        C_Timer.After(delay, function()
+            local ok = pcall(startSpellScan)
+            if not ok and db then db.errors = (db.errors or 0) + 1 end
+        end)
+    end
+end
+
+local function resumeSpellCheck()
+    if scan and scan.paused then
+        scan.paused = nil
+        scanLater(SCAN_LEVEL_DELAY)
+    end
+end
+
+local function spellCheckStatus()
+    local list = scanList()
+    if not list or type(db.spellScan) ~= "table" then return nil end
+    local state = db.spellScan[characterSlot()]
+    if type(state) ~= "table" or state.listVersion ~= list.listVersion then return "spell check waiting" end
+    if state.done then return "spell check done for level " .. tostring(state.level) end
+    local at = scan and scan.cursor or state.next or 1
+    return string.format("spell check %d/%d%s", math.min(at, #list.spells), #list.spells,
+        scan and scan.paused and " (paused in combat)" or "")
+end
+
 local function status()
-    message(string.format("%s; %s; %d/%d saved; %d dropped; %d handler errors; full text %s.",
+    local check = spellCheckStatus()
+    message(string.format("%s; %s; %d/%d saved; %d dropped; %d handler errors; full text %s%s.",
         VERSION, db.enabled and "on" or "off", #db.records, MAX_RECORDS,
-        db.dropped or 0, db.errors or 0, db.captureText and "on" or "off"))
+        db.dropped or 0, db.errors or 0, db.captureText and "on" or "off",
+        check and ("; " .. check) or ""))
 end
 
 local function command(value)
@@ -1700,6 +1984,8 @@ local function command(value)
         db.questRepFingerprints = {}
         db.questTextFingerprints = {}
         db.spellTextFingerprints = {}
+        db.spellScan = {}
+        db.spellScanHashes = {}
         db.recipeFingerprints = {}
         db.professionFingerprints = {}
         db.sightingKeys = {}
@@ -1730,9 +2016,9 @@ local handlers = {
     end,
     QUEST_GREETING = questGreeting,
     MERCHANT_SHOW = merchant,
-    TRAINER_SHOW = trainer,
-    TRAINER_UPDATE = trainer,
-    TRAINER_CLOSED = function() lastTrainerDigest = nil end,
+    TRAINER_SHOW = trainerShow,
+    TRAINER_UPDATE = trainerUpdate,
+    TRAINER_CLOSED = trainerClosed,
     TRADE_SKILL_SHOW = professionOpened,
     TRADE_SKILL_UPDATE = professionOpened,
     NEW_RECIPE_LEARNED = function(recipeID)
@@ -1771,12 +2057,19 @@ local handlers = {
         if not spellsScannedAtLogin then
             spellsScannedAtLogin = true
             scheduleSpellScan()
+            scheduleSpellCheck(SCAN_START_DELAY)
         end
+    end,
+    PLAYER_LEVEL_UP = function()
+        -- Numbers change with level; check again once the new level is in place.
+        if scan then scan = nil end
+        scheduleSpellCheck(SCAN_LEVEL_DELAY)
     end,
     SPELLS_CHANGED = scheduleSpellScan,
     LEARNED_SPELL_IN_TAB = scheduleSpellScan,
     PLAYER_REGEN_ENABLED = function()
         if spellScanAfterCombat then scheduleSpellScan() end
+        resumeSpellCheck()
     end,
     PLAYER_TARGET_CHANGED = targetSighting,
     QUEST_LOG_UPDATE = scheduleQuestScan,

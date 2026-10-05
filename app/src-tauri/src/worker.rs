@@ -21,6 +21,10 @@ const SETTLE: Duration = Duration::from_secs(3);
 /// Only rewrite the game's save once this many records are safely queued, so
 /// the file is touched rarely. The addon stops recording at 5,000.
 pub const ROLLOVER_AT: i64 = 200;
+/// Seconds between asking restedrealm.com for the background spell list, and
+/// the wait after a failed attempt.
+const SPELL_LIST_EVERY: i64 = 6 * 3600;
+const SPELL_LIST_RETRY: i64 = 3600;
 
 pub fn now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
@@ -116,6 +120,9 @@ fn cycle(app: &AppHandle, shared: &Shared, queue: &mut Queue, game: Option<&Path
             }
         }
     }
+    if let (true, Some(game)) = (setup_done, game) {
+        refresh_spell_list(queue, game);
+    }
     let auto = queue.setting(keys::AUTO_UPLOAD).ok().flatten().as_deref() == Some("1");
     let pending = queue.status().map(|s| s.pending).unwrap_or(0);
     if setup_done && pending > 0 && (auto || forced) && shared.connected() {
@@ -149,4 +156,37 @@ fn cycle(app: &AppHandle, shared: &Shared, queue: &mut Queue, game: Option<&Path
     }
     crate::tray::refresh(shared);
     set_working(app, shared, false);
+}
+
+/// Keep the addon's background spell list current: asked for every six hours,
+/// rewritten only when the website's list version changed. A failure is quiet:
+/// without a list it is tried again an hour later, with one the addon keeps
+/// using it until the next six-hourly check.
+fn refresh_spell_list(queue: &Queue, game: &Path) {
+    let folder = crate::addon::installed_folder(game);
+    if crate::addon::addon_version(&folder).is_none() {
+        return;
+    }
+    let written = rrc_core::spell_list::written_version(&folder);
+    let checked = queue.setting(keys::SPELL_LIST_CHECKED_AT).ok().flatten().and_then(|v| v.parse::<i64>().ok());
+    if written.is_some() && checked.is_some_and(|at| now() - at < SPELL_LIST_EVERY) {
+        return;
+    }
+    if checked.is_some_and(|at| now() - at < SPELL_LIST_RETRY) {
+        return;
+    }
+    match rrc_core::spell_list::fetch(&Https::default().base_url) {
+        Ok(list) => {
+            let _ = queue.set_setting(keys::SPELL_LIST_CHECKED_AT, &now().to_string());
+            if written.as_deref() != Some(list.list_version.as_str()) {
+                if let Err(e) = rrc_core::spell_list::write(&folder, &list) {
+                    eprintln!("spell list not written: {e}");
+                }
+            }
+        }
+        Err(e) => {
+            let _ = queue.set_setting(keys::SPELL_LIST_CHECKED_AT, &now().to_string());
+            eprintln!("spell list not fetched: {e}");
+        }
+    }
 }

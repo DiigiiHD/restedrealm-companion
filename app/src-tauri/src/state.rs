@@ -17,6 +17,8 @@ pub mod keys {
     pub const AUTOSTART: &str = "autostart";
     pub const LAST_UPLOAD_AT: &str = "last_upload_at";
     pub const LAST_UPLOAD_COUNT: &str = "last_upload_count";
+    /// When the app last asked restedrealm.com for the background spell list.
+    pub const SPELL_LIST_CHECKED_AT: &str = "spell_list_checked_at";
 }
 
 pub enum Trigger {

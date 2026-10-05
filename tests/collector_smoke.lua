@@ -264,13 +264,54 @@ assert(fullTrainer.data.services[3].status == "used" and fullTrainer.data.allSta
 assert(fullTrainer.data.filterWasHiding == true and trainerFilter.used == 0 and filterEvents == 2)
 assert(#RestedRealmCollectorDB.records == beforeRepeat + 1, "filter changes did not start another read")
 GetTrainerServiceTypeFilter, SetTrainerServiceTypeFilter = nil, nil
+-- An empty list is looked at again 0.5 and 1.5 seconds later; only a list
+-- that stays empty is recorded, once, with what each look returned.
+frame.callback(frame, "TRAINER_CLOSED")
 GetNumTrainerServices = function() return 0 end
+local beforeEmpty = #RestedRealmCollectorDB.records
 frame.callback(frame, "TRAINER_SHOW")
+assert(#RestedRealmCollectorDB.records == beforeEmpty, "not recorded as empty on the first look")
+flushTimer()
+assert(#RestedRealmCollectorDB.records == beforeEmpty)
+flushTimer()
 local emptyTrainer = RestedRealmCollectorDB.records[#RestedRealmCollectorDB.records]
 assert(emptyTrainer.kind == "trainer_window" and emptyTrainer.data.shownCount == 0)
+assert(#emptyTrainer.data.attempts == 3 and emptyTrainer.data.attempts[1].at == "show")
+assert(emptyTrainer.data.attempts[3].at == "after 1.5s" and emptyTrainer.data.attempts[3].count == 0)
 local emptyTrainerCount = #RestedRealmCollectorDB.records
 frame.callback(frame, "TRAINER_UPDATE")
-assert(#RestedRealmCollectorDB.records == emptyTrainerCount)
+frame.callback(frame, "TRAINER_CLOSED")
+assert(#RestedRealmCollectorDB.records == emptyTrainerCount, "one empty record per visit")
+-- The list arrives a moment after the window opens: recorded, and no empty record.
+local trainerServices = 0
+GetNumTrainerServices = function() return trainerServices end
+GetTrainerServiceInfo = function(i) return "Lesser Heal " .. i, "available" end
+frame.callback(frame, "TRAINER_SHOW")
+trainerServices = 4
+flushTimer()
+local lateTrainer = RestedRealmCollectorDB.records[#RestedRealmCollectorDB.records]
+assert(lateTrainer.kind == "trainer" and #lateTrainer.data.services == 4)
+frame.callback(frame, "TRAINER_CLOSED")
+assert(#RestedRealmCollectorDB.records == emptyTrainerCount + 1, "no empty record once the list arrived")
+-- The list arrives during the quiet period after our own filter change.
+local clock = 100
+GetTime = function() return clock end
+trainerFilter = { available = 1, unavailable = 1, used = 0 }
+GetTrainerServiceTypeFilter = function(status) return trainerFilter[status] end
+SetTrainerServiceTypeFilter = function(status, value) trainerFilter[status] = value end
+trainerServices = 0
+frame.callback(frame, "TRAINER_SHOW")
+-- Our own filter change only: the count is unchanged, so nothing is read.
+frame.callback(frame, "TRAINER_UPDATE")
+flushTimer()
+assert(#RestedRealmCollectorDB.records == emptyTrainerCount + 1)
+trainerServices = 6
+frame.callback(frame, "TRAINER_UPDATE")
+flushTimer()
+local quietTrainer = RestedRealmCollectorDB.records[#RestedRealmCollectorDB.records]
+assert(quietTrainer.kind == "trainer" and #quietTrainer.data.services == 6)
+frame.callback(frame, "TRAINER_CLOSED")
+GetTrainerServiceTypeFilter, SetTrainerServiceTypeFilter, GetTime = nil, nil, nil
 NumTaxiNodes = function() return 1 end
 TaxiNodePosition = function() return 0.2, 0.3 end
 TaxiNodeName = function() return "Test flight point" end

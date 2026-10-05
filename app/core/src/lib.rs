@@ -11,6 +11,7 @@ pub mod game;
 pub mod lua;
 pub mod queue;
 pub mod save;
+pub mod spell_list;
 pub mod upload;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

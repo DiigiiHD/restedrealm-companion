@@ -59,6 +59,11 @@ pub fn install(source: &Path, game: &Path) -> Result<String, String> {
             continue;
         }
         let final_path = target.join(entry.file_name());
+        // The spell list the app downloaded stays; the bundled file is only an
+        // empty placeholder for a first install.
+        if entry.file_name() == rrc_core::spell_list::FILE_NAME && final_path.is_file() {
+            continue;
+        }
         let temp = target.join(format!(".{}.rrc-new", entry.file_name().to_string_lossy()));
         fs::copy(&path, &temp).map_err(|e| format!("Could not copy the addon: {e}"))?;
         fs::rename(&temp, &final_path).map_err(|e| format!("Could not replace the addon: {e}"))?;

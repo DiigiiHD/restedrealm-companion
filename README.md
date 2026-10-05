@@ -113,6 +113,10 @@ It is game text, so it goes through the same path as quest text: it needs full t
 
 Neither has run in the Forever client yet.
 
+## Version 0.1.21 spell check loads spells before reading them
+
+In 0.1.20 the background check wrote nothing in game. A spell the character has never seen has no description until the game has loaded its data, so nearly every description came back empty, no pack ever filled, and progress lived only in memory until the closing pack, which a logout or `/reload` lost. From 0.1.21 the addon asks the game for about 100 spells ahead of reading them (`C_Spell.RequestLoadSpellData`, or `Spell:CreateFromSpellID():ContinueOnSpellLoad`), reads up to 50 per 0.1 seconds as their data arrives (`SPELL_DATA_LOAD_RESULT`), and waits at most five seconds for one spell; a spell that does not answer gets one more try after the rest of the list, and a spell reported missing or still empty after loading counts as empty. Every five seconds it saves what it has read as a pack, and saves its progress even when nothing changed, so a closed game or `/reload` continues where it stopped. `/rrc status` shows the progress and how many descriptions came back empty so far.
+
 ## License
 
 The addon, companion, tools and tests in this repository are released under the [MIT License](LICENSE). The license covers this project's own source code only. World of Warcraft game content and data, including any quest or NPC text a local save captures, remain Blizzard's and are not licensed here. Local queues, game saves, credentials and backups stay private and are never part of the repository.

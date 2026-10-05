@@ -1,6 +1,6 @@
 -- RestedRealm Forever collection probe. No gameplay actions or network access.
 local ADDON = ...
-local VERSION = "0.1.20"
+local VERSION = "0.1.21"
 local IDENTITY_SCHEMA = 2
 -- 1: player name, race and class in captured text are replaced by <name>,
 -- <race> and <class>. Only records carrying this may upload their text.
@@ -1740,21 +1740,31 @@ end
 -- Background spell check (spell_scan). RestedRealm Companion writes the list of
 -- spell IDs the website checks into SpellScanList.lua. Once per list version
 -- and character level, while out of combat, the addon reads each description
--- in small steps (25 every 0.1 seconds, about a minute for the whole list) and
--- records them in packs. The first scan of a list version sends every
+-- and records them in packs. The first scan of a list version sends every
 -- description; a later level only sends the ones whose text changed, and the
--- closing pack says how many were checked and unchanged. Game text, so it is
--- sanitized like quest text and nothing is scanned with text capture off.
-local SCAN_STEP = 25
+-- closing pack says how many were checked, unchanged and empty. Game text, so
+-- it is sanitized like quest text and nothing is scanned with text capture off.
+--
+-- A spell the character has never seen has no description until the game has
+-- loaded its data, so the addon asks for spells ahead of reading them, reads a
+-- spell once its data has arrived (SPELL_DATA_LOAD_RESULT) or after a wait,
+-- and saves what it has read at least every few seconds, so a game closed
+-- mid-scan keeps it.
 local SCAN_INTERVAL = 0.1
+local SCAN_LOOKAHEAD = 100
+local SCAN_READS = 50
+-- In steps of SCAN_INTERVAL: wait up to 5 seconds for one spell's data, and
+-- save a partial pack at least every 5 seconds.
+local SCAN_LOAD_WAIT = 50
+local SCAN_FLUSH_EVERY = 50
 local SCAN_START_DELAY = 20
 local SCAN_LEVEL_DELAY = 5
-local SCAN_RETRY_DELAY = 2
 local SCAN_MAX_PACK = 200
 -- The website takes at most 100,000 characters per record.
 local SCAN_PACK_CHARS = 60000
 local SCAN_SLOTS = 5
 local scan
+local spellLoadResults = {}
 
 local function scanList()
     local list = RestedRealmSpellScanList
@@ -1790,11 +1800,37 @@ local function inCombat()
     return call(InCombatLockdown) or call(UnitAffectingCombat, "player")
 end
 
+-- Where a resumed scan starts: the first spell not yet saved in a pack.
+local function resumePoint(run)
+    if run.mainDone then return run.listSize + 1 end
+    local first = run.requestCursor
+    for _, item in ipairs(run.pending) do
+        if item.index < first then first = item.index end
+    end
+    return first
+end
+
 -- Write the pack gathered so far. The fingerprints and the resume point move
 -- on only once the record is saved.
+local function commitScan(run)
+    for id, hash in pairs(run.pendingHashes) do run.hashes[id] = hash end
+    run.state.checked = run.state.checked + run.checked
+    run.state.unchanged = run.state.unchanged + run.unchanged
+    run.state.empty = (run.state.empty or 0) + run.empty
+    run.state.next = resumePoint(run)
+    run.state.at = number(call(GetServerTime))
+    run.entries, run.chars, run.pendingHashes = {}, 0, {}
+    run.checked, run.unchanged, run.empty = 0, 0, 0
+end
+
 local function flushScan(final)
     local run = scan
-    if #run.entries == 0 and not final then return true end
+    run.flushedAt = run.ticks
+    if #run.entries == 0 and not final then
+        -- Nothing to send, but the progress is kept, so a reload continues here.
+        commitScan(run)
+        return true
+    end
     local _, classToken = call(UnitClass, "player")
     local _, raceToken = call(UnitRace, "player")
     local data = { listVersion = run.listVersion, level = run.level,
@@ -1804,19 +1840,13 @@ local function flushScan(final)
         data.complete = true
         data.checked = run.state.checked + run.checked
         data.unchanged = run.state.unchanged + run.unchanged
-        data.empty = run.empty
+        data.empty = (run.state.empty or 0) + run.empty
         data.listSize = run.listSize
     end
     local before = #db.records
     record("spell_scan", data)
     if #db.records == before then return false end
-    for id, hash in pairs(run.pendingHashes) do run.hashes[id] = hash end
-    run.state.checked = run.state.checked + run.checked
-    run.state.unchanged = run.state.unchanged + run.unchanged
-    -- During the second look the main list is finished.
-    run.state.next = run.retryPass and run.listSize + 1 or run.cursor
-    run.state.at = number(call(GetServerTime))
-    run.entries, run.chars, run.pendingHashes, run.checked, run.unchanged = {}, 0, {}, 0, 0
+    commitScan(run)
     return true
 end
 
@@ -1831,24 +1861,45 @@ local function scanLater(delay)
     end
 end
 
-local function scanOne(id)
-    local run = scan
+local function loadedDescription(id)
     local description = spellDescription(id)
-    if type(description) ~= "string" or description == "" then
-        return false
+    if type(description) == "string" and description ~= "" then return description end
+    return nil
+end
+
+-- Ask the game to load a spell's data; SPELL_DATA_LOAD_RESULT says when.
+local function requestSpell(id)
+    if has(C_Spell, "RequestLoadSpellData") then
+        call(C_Spell.RequestLoadSpellData, id)
+        return
     end
+    if type(Spell) == "table" and type(Spell.CreateFromSpellID) == "function" then
+        local spell = call(Spell.CreateFromSpellID, Spell, id)
+        if type(spell) == "table" and type(spell.ContinueOnSpellLoad) == "function" then
+            pcall(spell.ContinueOnSpellLoad, spell, function() spellLoadResults[id] = true end)
+        end
+    end
+end
+
+-- One description read: counted, and added to the pack if its text changed.
+local function takeDescription(id, description)
+    local run = scan
     local value = sanitize(text(description))
-    if type(value) ~= "string" or value == "" then return true end
+    if type(value) ~= "string" or value == "" then return end
     run.checked = run.checked + 1
     local hash = textHash(value)
     if run.hashes[id] == hash then
         run.unchanged = run.unchanged + 1
-        return true
+        return
     end
     run.entries[#run.entries + 1] = { spellId = id, text = value }
     run.chars = run.chars + #value
     run.pendingHashes[id] = hash
-    return true
+end
+
+local function forget(id)
+    scan.waiting[id] = nil
+    spellLoadResults[id] = nil
 end
 
 scanStep = function()
@@ -1862,37 +1913,77 @@ scanStep = function()
         run.paused = true
         return
     end
-    local packSize = run.packSize
-    local stop = math.min(run.cursor + SCAN_STEP - 1, #run.spells)
-    while run.cursor <= stop do
-        local id = number(run.spells[run.cursor])
-        run.cursor = run.cursor + 1
-        if id and not scanOne(id) then
-            -- Not loaded yet: ask for it and look again at the end.
-            if has(C_Spell, "RequestLoadSpellData") then call(C_Spell.RequestLoadSpellData, id) end
-            run.retry[#run.retry + 1] = id
+    run.ticks = run.ticks + 1
+    -- Ask for the next spells before they are needed.
+    while #run.pending < SCAN_LOOKAHEAD and run.requestCursor <= run.listSize do
+        local index = run.requestCursor
+        run.requestCursor = index + 1
+        local id = number(run.spells[index])
+        if id then
+            run.pending[#run.pending + 1] = { id = id, index = index, at = run.ticks }
+            run.waiting[id] = true
+            if not loadedDescription(id) then requestSpell(id) end
         end
-        if #run.entries >= packSize or run.chars >= SCAN_PACK_CHARS then
+    end
+    -- Read the ones that have loaded; give up on one after a wait.
+    local keep, reads, waiting = {}, 0, run.pending
+    for position, item in ipairs(waiting) do
+        local description = reads < SCAN_READS and loadedDescription(item.id)
+        if description then
+            reads = reads + 1
+            takeDescription(item.id, description)
+            forget(item.id)
+        elseif reads < SCAN_READS and spellLoadResults[item.id] ~= nil then
+            -- Loaded, or reported missing, and still no text: an empty description.
+            run.empty = run.empty + 1
+            forget(item.id)
+        elseif run.ticks - item.at >= SCAN_LOAD_WAIT then
+            forget(item.id)
+            if run.mainDone then
+                run.empty = run.empty + 1
+            else
+                -- No answer yet: one more try after the whole list.
+                run.deferred[#run.deferred + 1] = item.id
+            end
+        else
+            keep[#keep + 1] = item
+        end
+        if #run.entries >= run.packSize or run.chars >= SCAN_PACK_CHARS then
+            -- The resume point must still see the spells not looked at yet.
+            local rest = {}
+            for _, other in ipairs(keep) do rest[#rest + 1] = other end
+            for later = position + 1, #waiting do rest[#rest + 1] = waiting[later] end
+            run.pending = rest
             if not flushScan(false) then
                 scan = nil
                 return
             end
         end
     end
-    if run.cursor <= #run.spells then
+    run.pending = keep
+    if run.ticks - run.flushedAt >= SCAN_FLUSH_EVERY then
+        if not flushScan(false) then
+            scan = nil
+            return
+        end
+    end
+    if run.requestCursor <= run.listSize or #run.pending > 0 then
         scanLater(SCAN_INTERVAL)
         return
     end
-    if not run.retried and #run.retry > 0 then
-        -- One more look at the spells that had not loaded, after a pause.
-        run.retried = true
-        run.spells, run.retry = run.retry, {}
-        run.cursor = 1
-        run.retryPass = true
-        scanLater(SCAN_RETRY_DELAY)
-        return
+    if not run.mainDone then
+        run.mainDone = true
+        if #run.deferred > 0 then
+            for _, id in ipairs(run.deferred) do
+                run.pending[#run.pending + 1] = { id = id, index = run.listSize + 1, at = run.ticks }
+                run.waiting[id] = true
+                requestSpell(id)
+            end
+            run.deferred = {}
+            scanLater(SCAN_INTERVAL)
+            return
+        end
     end
-    run.empty = #run.retry
     if flushScan(true) then
         run.state.done = true
         run.state.next = nil
@@ -1917,12 +2008,15 @@ local function startSpellScan()
         state.level, state.next, state.done = level, nil, nil
     end
     if state.done then return end
-    if not state.next then state.next, state.checked, state.unchanged = 1, 0, 0 end
+    if not state.next then state.next, state.checked, state.unchanged, state.empty = 1, 0, 0, 0 end
     local packSize = number(list.packSize) or SCAN_MAX_PACK
     if packSize < 1 or packSize > SCAN_MAX_PACK then packSize = SCAN_MAX_PACK end
     scan = { listVersion = list.listVersion, level = level, spells = list.spells,
-        cursor = state.next, listSize = #list.spells, packSize = packSize, state = state, hashes = hashes,
-        entries = {}, chars = 0, pendingHashes = {}, checked = 0, unchanged = 0, retry = {} }
+        listSize = #list.spells, requestCursor = state.next, packSize = packSize,
+        state = state, hashes = hashes, pending = {}, waiting = {}, deferred = {},
+        ticks = 0, flushedAt = 0, entries = {}, chars = 0, pendingHashes = {},
+        checked = 0, unchanged = 0, empty = 0 }
+    if state.next > scan.listSize then scan.mainDone = true end
     scanLater(SCAN_INTERVAL)
 end
 
@@ -1948,9 +2042,10 @@ local function spellCheckStatus()
     local state = db.spellScan[characterSlot()]
     if type(state) ~= "table" or state.listVersion ~= list.listVersion then return "spell check waiting" end
     if state.done then return "spell check done for level " .. tostring(state.level) end
-    local at = scan and scan.cursor or state.next or 1
-    return string.format("spell check %d/%d%s", math.min(at, #list.spells), #list.spells,
-        scan and scan.paused and " (paused in combat)" or "")
+    local at = scan and resumePoint(scan) or state.next or 1
+    local empty = (state.empty or 0) + (scan and scan.empty or 0)
+    return string.format("spell check %d/%d, %d empty so far%s", math.min(at, #list.spells), #list.spells,
+        empty, scan and scan.paused and " (paused in combat)" or "")
 end
 
 local function status()
@@ -2059,6 +2154,10 @@ local handlers = {
             scheduleSpellScan()
             scheduleSpellCheck(SCAN_START_DELAY)
         end
+    end,
+    SPELL_DATA_LOAD_RESULT = function(spellID, success)
+        local id = number(spellID)
+        if scan and id and scan.waiting[id] then spellLoadResults[id] = success == true end
     end,
     PLAYER_LEVEL_UP = function()
         -- Numbers change with level; check again once the new level is in place.

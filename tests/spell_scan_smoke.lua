@@ -117,7 +117,7 @@ mark = #RestedRealmCollectorDB.records
 RestedRealmSpellScanList.listVersion = "1.60.1.70205-8"
 level = 12
 frame.callback(frame, "PLAYER_LEVEL_UP")
-runTimers(5)
+runTimers(3)
 fighting = true
 runTimers()
 local during = #RestedRealmCollectorDB.records
@@ -180,7 +180,7 @@ descriptions[1002] = "Heals 2."
 mark = #RestedRealmCollectorDB.records
 RestedRealmSpellScanList.listVersion = "1.60.1.70205-11"
 frame.callback(frame, "PLAYER_LEVEL_UP")
-runTimers(10)  -- 250 descriptions: one pack of 200 saved, 50 in memory
+runTimers(6)  -- 250 descriptions read: one pack of 200 saved, 50 in memory
 assert(#scans(mark + 1) == 1)
 queue = {}
 local saved = table.concat(serialize(RestedRealmCollectorDB, {}))
@@ -198,6 +198,65 @@ for _, pack in ipairs(resumed) do
     end
 end
 assert(total == 450 and finalOf(resumed).data.checked == 450, total)
+
+-- 10. The case seen in game: descriptions are empty until the game has loaded
+-- the spell, which it announces a moment later with SPELL_DATA_LOAD_RESULT.
+local loadable, loadQueue = {}, {}
+for i = 1, 450 do loadable[1000 + i] = "Smites for " .. i .. "." end
+loadable[1003] = false   -- the game reports this spell as missing
+loadable[1004] = nil     -- and never answers for this one
+for i = 1, 450 do descriptions[1000 + i] = "" end
+C_Spell.RequestLoadSpellData = function(id) loadQueue[#loadQueue + 1] = id end
+local function runGame()
+    local steps = 0
+    while #queue > 0 and steps < 100000 do
+        local fn = table.remove(queue, 1)
+        fn()
+        steps = steps + 1
+        -- The game loads what was asked for, then tells the addon.
+        local asked = loadQueue
+        loadQueue = {}
+        for _, id in ipairs(asked) do
+            if loadable[id] ~= nil then
+                if loadable[id] then descriptions[id] = loadable[id] end
+                frame.callback(frame, "SPELL_DATA_LOAD_RESULT", id, loadable[id] and true or false)
+            end
+        end
+    end
+end
+mark = #RestedRealmCollectorDB.records
+RestedRealmSpellScanList.listVersion = "1.60.1.70205-13"
+frame.callback(frame, "PLAYER_LEVEL_UP")
+runGame()
+local loaded = scans(mark + 1)
+local closingLoaded = finalOf(loaded)
+assert(closingLoaded, "the scan finishes")
+assert(closingLoaded.data.checked == 448 and closingLoaded.data.empty == 2,
+    closingLoaded.data.checked .. " checked, " .. closingLoaded.data.empty .. " empty")
+local smite = 0
+for _, pack in ipairs(loaded) do
+    for _, entry in ipairs(pack.data.entries) do
+        if string.find(entry.text, "^Smites for") then smite = smite + 1 end
+    end
+end
+assert(smite == 448)
+SlashCmdList.RESTEDREALMCOLLECTOR("status")
+assert(string.find(said[#said], "spell check done for level", 1, true), said[#said])
+
+-- 11. Progress is kept every few seconds even when nothing changed, so a
+-- /reload continues instead of starting again at the first spell.
+level = level + 1
+frame.callback(frame, "PLAYER_LEVEL_UP")
+runTimers(60)  -- a little over five seconds of scanning, every text unchanged
+local slotState
+for _, state in pairs(RestedRealmCollectorDB.spellScan) do
+    if state.listVersion == "1.60.1.70205-13" then slotState = state end
+end
+assert(slotState and slotState.next and slotState.next > 1 and slotState.checked > 0,
+    "progress saved without a record")
+SlashCmdList.RESTEDREALMCOLLECTOR("status")
+assert(string.find(said[#said], "empty so far", 1, true), said[#said])
+queue = {}
 
 -- 8. Text capture off: no check at all.
 mark = #RestedRealmCollectorDB.records

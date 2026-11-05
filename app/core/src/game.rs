@@ -6,7 +6,17 @@ use std::path::{Path, PathBuf};
 /// Executable names that mean WoW is open. Rollover waits while any is running.
 pub const GAME_EXECUTABLES: &[&str] = &["WowB.exe", "Wow.exe", "WowClassic.exe", "WowClassicB.exe", "WowT.exe"];
 
-/// Every account's addon save inside one game version folder, such as `_classic_beta_`.
+/// Whether a process name is a game client. Besides the known names, any
+/// `Wow*.exe` counts, so a client name Blizzard introduces (the released
+/// Forever's included) also holds back rollover. Wrongly thinking the game is
+/// open only delays emptying the save; the opposite could race the game.
+pub fn is_game_executable(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    GAME_EXECUTABLES.iter().any(|exe| exe.eq_ignore_ascii_case(name))
+        || (lower.starts_with("wow") && lower.ends_with(".exe"))
+}
+
+/// Every account's addon save inside one game version folder, such as `_forever_`.
 pub fn saved_files(game: &Path) -> Vec<PathBuf> {
     let Ok(accounts) = std::fs::read_dir(game.join("WTF").join("Account")) else {
         return Vec::new();
@@ -40,7 +50,7 @@ pub fn wow_running() -> bool {
         while more {
             let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
             let name = String::from_utf16_lossy(&entry.szExeFile[..len]);
-            if GAME_EXECUTABLES.iter().any(|exe| exe.eq_ignore_ascii_case(&name)) {
+            if is_game_executable(&name) {
                 found = true;
                 break;
             }
@@ -59,6 +69,16 @@ pub fn wow_running() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn any_wow_client_holds_back_rollover() {
+        for name in ["Wow.exe", "WowB.exe", "wowclassic.exe", "WowF.exe", "WowForever.exe"] {
+            assert!(is_game_executable(name), "{name}");
+        }
+        for name in ["Battle.net.exe", "Agent.exe", "wow", "notwow.exe", "explorer.exe"] {
+            assert!(!is_game_executable(name), "{name}");
+        }
+    }
 
     #[test]
     fn finds_each_account_save() {

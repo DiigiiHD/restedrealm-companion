@@ -126,7 +126,7 @@ fn write_lua(out: &mut String, value: &Value) -> Result<(), Error> {
             if strings == 0 {
                 sorted.sort_by(|a, b| key_number(&a.0).total_cmp(&key_number(&b.0)));
             } else {
-                sorted.sort_by(|a, b| key_text(&a.0).cmp(&key_text(&b.0)));
+                sorted.sort_by_key(|a| key_text(&a.0));
             }
             out.push('{');
             for (i, (key, item)) in sorted.into_iter().enumerate() {

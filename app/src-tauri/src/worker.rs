@@ -59,6 +59,7 @@ pub fn run(app: AppHandle, shared: Arc<Shared>, rx: Receiver<Trigger>, tx: Sende
     let mut _watcher = None;
     let mut forced = false;
     loop {
+        move_to_released_game(&shared, &queue);
         let game = shared.game_dir();
         if game != watched {
             _watcher = game.as_deref().and_then(|g| watch(g, tx.clone()));
@@ -189,4 +190,24 @@ fn refresh_spell_list(queue: &Queue, game: &Path) {
             eprintln!("spell list not fetched: {e}");
         }
     }
+}
+
+/// When World of Warcraft: Forever was released it moved from `_classic_beta_`
+/// to `_forever_`. Once the released game has been started, a player still set
+/// to the beta folder is moved to it, and the addon is installed there. Beta
+/// records already in the queue still upload; the beta folder is then left
+/// alone. Only that one folder next to the beta is ever considered.
+fn move_to_released_game(shared: &Shared, queue: &Queue) {
+    let Some(current) = shared.game_dir() else { return };
+    let Some(released) = crate::addon::released_beside(&current) else { return };
+    let setup_done = queue.setting(keys::SETUP_DONE).ok().flatten().as_deref() == Some("1");
+    if setup_done && crate::addon::addon_version(&crate::addon::installed_folder(&released)).is_none() {
+        // A first copy into a folder the game has not loaded it from is safe
+        // while the game runs; it is picked up at the next login or /reload.
+        if let Err(e) = crate::addon::install(&shared.addon_source, &released) {
+            shared.live.lock().unwrap().last_error = Some(format!("The addon could not be installed for Forever: {e}"));
+            return;
+        }
+    }
+    let _ = queue.set_setting(keys::GAME_DIR, &released.display().to_string());
 }

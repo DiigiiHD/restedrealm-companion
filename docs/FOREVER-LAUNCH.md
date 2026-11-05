@@ -1,6 +1,8 @@
 # Forever launch: recognising the right game and refusing the wrong data
 
-Written 29 September 2026. Status: plan, not built. Owner decisions are recorded at the end.
+Written 29 September 2026. Owner decisions are recorded at the end.
+
+**Status, 5 November 2026.** Forever was released as product `wowf` in `_forever_` (from build 1.60.1.70532). App 0.3.0 does the minimum the release needed instead of the full plan below: a fixed list of two folders (`_forever_` first, then `_classic_beta_`) with every other folder refused, the automatic move from the beta folder (section 5), any `Wow*.exe` counting as the game being open, and the website counting `wowf` builds as released. Records keep `wow_classic_beta`, the website's name for Forever data, so section 4 was not needed. The website-served list (section 2), the `.build.info` and per-record version checks (section 3) and the protections (section 6) are still open.
 
 ## 1. What this solves
 

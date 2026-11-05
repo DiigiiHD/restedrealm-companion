@@ -5,24 +5,29 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub const ADDON_FOLDER: &str = "RestedRealmCollector";
-pub const FOREVER_FOLDER: &str = "_classic_beta_";
+/// World of Warcraft: Forever's folder since it was released (Battle.net
+/// product `wowf`, from build 1.60.1.70532), then the beta's. No other game
+/// version is ever read: retail, Classic Era and the rest are left alone.
+pub const FOREVER_FOLDERS: &[&str] = &["_forever_", "_classic_beta_"];
+pub const BETA_FOLDER: &str = "_classic_beta_";
 
-fn looks_like_game_version(path: &Path) -> bool {
-    path.join("WTF").is_dir() || path.join("Interface").is_dir()
+fn is_forever_folder(path: &Path) -> bool {
+    path.file_name().and_then(|n| n.to_str()).is_some_and(|n| FOREVER_FOLDERS.contains(&n))
 }
 
-/// Accept the Forever folder itself or the World of Warcraft folder above it.
+/// Accept a Forever folder itself or the World of Warcraft folder above it.
+/// The released game wins over the beta when both are installed.
 pub fn normalize_game_dir(chosen: &Path) -> Option<PathBuf> {
-    if chosen.join(FOREVER_FOLDER).is_dir() {
-        return Some(chosen.join(FOREVER_FOLDER));
+    if let Some(found) = FOREVER_FOLDERS.iter().map(|f| chosen.join(f)).find(|p| p.is_dir()) {
+        return Some(found);
     }
-    if chosen.file_name().is_some_and(|n| n == FOREVER_FOLDER) || looks_like_game_version(chosen) {
+    if is_forever_folder(chosen) && chosen.is_dir() {
         return Some(chosen.to_path_buf());
     }
     None
 }
 
-/// The usual install locations, first match wins.
+/// The usual install locations, first match wins, the released game first.
 pub fn detect_game_dir() -> Option<PathBuf> {
     let mut roots: Vec<PathBuf> = ["PROGRAMFILES(X86)", "PROGRAMFILES", "PUBLIC"]
         .iter()
@@ -33,7 +38,19 @@ pub fn detect_game_dir() -> Option<PathBuf> {
         roots.push(PathBuf::from(format!(r"{drive}:\Games")));
         roots.push(PathBuf::from(format!(r"{drive}:\Program Files (x86)")));
     }
-    roots.into_iter().map(|root| root.join("World of Warcraft").join(FOREVER_FOLDER)).find(|p| p.is_dir())
+    FOREVER_FOLDERS
+        .iter()
+        .find_map(|folder| roots.iter().map(|root| root.join("World of Warcraft").join(folder)).find(|p| p.is_dir()))
+}
+
+/// The released game's folder next to a chosen beta folder, once the game has
+/// been started there (it has a WTF folder). The app moves to it by itself.
+pub fn released_beside(current: &Path) -> Option<PathBuf> {
+    if current.file_name().and_then(|n| n.to_str()) != Some(BETA_FOLDER) {
+        return None;
+    }
+    let released = current.parent()?.join(FOREVER_FOLDERS[0]);
+    released.join("WTF").is_dir().then_some(released)
 }
 
 /// The `## Version:` line of an addon folder's .toc, if any.
@@ -79,10 +96,26 @@ mod tests {
     fn installs_and_accepts_either_folder() {
         let dir = tempfile_dir();
         let wow = dir.join("World of Warcraft");
-        let forever = wow.join(FOREVER_FOLDER);
+        let forever = wow.join("_forever_");
+        let beta = wow.join(BETA_FOLDER);
+        // Only the beta at first, as before the release.
+        fs::create_dir_all(beta.join("WTF")).unwrap();
+        assert_eq!(normalize_game_dir(&wow), Some(beta.clone()));
+        assert_eq!(normalize_game_dir(&beta), Some(beta.clone()));
+        assert_eq!(released_beside(&beta), None, "no released folder yet");
+        // Installed but never started: still the beta for an existing choice.
+        fs::create_dir_all(forever.join("Interface")).unwrap();
+        assert_eq!(released_beside(&beta), None);
+        assert_eq!(normalize_game_dir(&wow), Some(forever.clone()), "the released game wins a new choice");
         fs::create_dir_all(forever.join("WTF")).unwrap();
-        assert_eq!(normalize_game_dir(&wow), Some(forever.clone()));
+        assert_eq!(released_beside(&beta), Some(forever.clone()));
+        assert_eq!(released_beside(&forever), None);
         assert_eq!(normalize_game_dir(&forever), Some(forever.clone()));
+        // Other game versions are never accepted, even with game folders inside.
+        for other in ["_retail_", "_classic_", "_classic_era_", "_ptr_"] {
+            fs::create_dir_all(wow.join(other).join("WTF")).unwrap();
+            assert_eq!(normalize_game_dir(&wow.join(other)), None, "{other}");
+        }
         assert_eq!(normalize_game_dir(&dir.join("elsewhere")), None);
 
         let source = dir.join("bundle");

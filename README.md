@@ -121,6 +121,10 @@ In 0.1.20 the background check wrote nothing in game. A spell the character has 
 
 Blizzard released Forever as Battle.net product `wowf`, installed in `_forever_` instead of `_classic_beta_`, from build 1.60.1.70532. The app now looks for `_forever_` first and the beta folder second, and accepts no other folder: choosing `_retail_`, `_classic_era_` or any other game version is refused, where before any folder with a `WTF` or `Interface` folder was accepted. A player whose app was set to `_classic_beta_` is moved to `_forever_` by itself once the released game has been started there (it has a `WTF` folder), and the addon is installed there; beta records already queued still upload. Any running `Wow*.exe` now counts as the game being open, so a new client name also holds back emptying the save. Records keep `wow_classic_beta` as their product, the website's name for all Forever data; the website counts `wowf` builds as released (restedrealm PR DiigiiHD/restedrealm#2).
 
+## App 0.3.1: refused for an unknown build, sent again
+
+The app keeps records the website refused and does not send them again, because a refused record is usually wrong in itself. One refusal is different: "Observation names a game build that has not been released" means only that the website did not know the build yet, and that clears once it does. On 5 November 2026, 50 records from the released Forever were refused this way before the website counted `wowf` builds as released. From 0.3.1 such records become pending again an hour after they were refused, at most once an hour; every other refusal stays as it is.
+
 ## License
 
 The addon, companion, tools and tests in this repository are released under the [MIT License](LICENSE). The license covers this project's own source code only. World of Warcraft game content and data, including any quest or NPC text a local save captures, remain Blizzard's and are not licensed here. Local queues, game saves, credentials and backups stay private and are never part of the repository.

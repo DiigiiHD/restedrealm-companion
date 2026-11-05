@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 pub const QUEUE_FILE: &str = "queue.sqlite3";
 
+/// The website's refusal for a build it does not know yet, which clears by itself.
+pub const RETRYABLE_REFUSAL: &str = "Observation names a game build that has not been released";
 /// A record waiting to upload: this version was neither confirmed nor refused
 /// by the website. A corrected record (new digest) becomes pending again.
 pub const PENDING: &str = "(o.uploaded_digest IS NULL OR o.uploaded_digest<>o.digest)
@@ -139,6 +141,19 @@ impl Queue {
         Ok(())
     }
 
+    /// Make records refused for a reason that can stop being true pending
+    /// again. A build the website did not know yet ("has not been released")
+    /// becomes known once Blizzard's build is recorded: when Forever moved to
+    /// the product code wowf, every upload from the released game was refused
+    /// this way until the website caught up. Retried at most once an hour, so
+    /// a truly invented build costs one small request an hour.
+    pub fn retry_refusals_that_can_clear(&self, now: i64) -> Result<usize> {
+        Ok(self.db.execute(
+            "DELETE FROM rejections WHERE reason LIKE ? AND rejected_at <= ?",
+            params![format!("{RETRYABLE_REFUSAL}%"), now - 3600],
+        )?)
+    }
+
     pub fn setting(&self, key: &str) -> Result<Option<String>> {
         Ok(self.db.query_row("SELECT value FROM settings WHERE key=?", [key], |r| r.get(0)).optional()?)
     }
@@ -237,6 +252,25 @@ mod tests {
         assert!(new_state.join("Backups").join("a.lua").is_file());
         assert!(!migrate_legacy(&f.queue.state, &new_state).unwrap());
         assert_eq!(f.count(), 1);
+    }
+
+    #[test]
+    fn unreleased_build_refusals_are_retried_and_others_are_not() {
+        let mut f = Fixture::new();
+        f.write(&sample(1, "Pilot"));
+        f.scan().unwrap();
+        let source = crate::save::source_id(&f.path).unwrap();
+        let digest = f.queue.recent(1).unwrap()[0].digest.clone();
+        f.queue.mark_rejected(&source, 1, &digest, &format!("{RETRYABLE_REFUSAL}."), 1_000).unwrap();
+        assert_eq!(f.queue.status().unwrap().pending, 0);
+        // Not within the hour it was refused.
+        assert_eq!(f.queue.retry_refusals_that_can_clear(1_000 + 3_599).unwrap(), 0);
+        assert_eq!(f.queue.retry_refusals_that_can_clear(1_000 + 3_600).unwrap(), 1);
+        assert_eq!(f.queue.status().unwrap().pending, 1);
+        // Any other refusal stays: the record itself is wrong.
+        f.queue.mark_rejected(&source, 1, &digest, "Observation contains a private text field.", 1_000).unwrap();
+        assert_eq!(f.queue.retry_refusals_that_can_clear(1_000_000).unwrap(), 0);
+        assert_eq!(f.queue.status().unwrap().pending, 0);
     }
 
     #[test]

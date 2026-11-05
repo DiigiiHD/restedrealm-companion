@@ -125,6 +125,7 @@ fn cycle(app: &AppHandle, shared: &Shared, queue: &mut Queue, game: Option<&Path
         refresh_spell_list(queue, game);
     }
     let auto = queue.setting(keys::AUTO_UPLOAD).ok().flatten().as_deref() == Some("1");
+    let _ = queue.retry_refusals_that_can_clear(now());
     let pending = queue.status().map(|s| s.pending).unwrap_or(0);
     if setup_done && pending > 0 && (auto || forced) && shared.connected() {
         match upload_all(queue, &Https::default(), shared.store.as_ref()) {

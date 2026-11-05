@@ -31,7 +31,13 @@ fn default_game() -> PathBuf {
     let base = std::env::var_os("PROGRAMFILES(X86)")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(r"C:\Program Files (x86)"));
-    base.join("World of Warcraft").join("_classic_beta_")
+    let wow = base.join("World of Warcraft");
+    let released = wow.join("_forever_");
+    if released.is_dir() {
+        released
+    } else {
+        wow.join("_classic_beta_")
+    }
 }
 
 fn run() -> Result<bool, String> {

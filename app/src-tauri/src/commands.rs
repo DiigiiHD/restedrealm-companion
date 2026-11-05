@@ -99,7 +99,7 @@ pub async fn detect_game() -> Option<String> {
 #[tauri::command]
 pub async fn set_game_dir(app: AppHandle, shared: SharedState<'_>, path: String) -> Result<String, String> {
     let chosen = addon::normalize_game_dir(&PathBuf::from(&path)).ok_or(
-        "That folder does not look like World of Warcraft. Choose the World of Warcraft folder or the _classic_beta_ folder inside it.",
+        "That folder does not hold World of Warcraft: Forever. Choose the World of Warcraft folder or the _forever_ folder inside it.",
     )?;
     let text = chosen.display().to_string();
     shared.queue()?.set_setting(keys::GAME_DIR, &text).map_err(|e| e.to_string())?;

@@ -19,8 +19,11 @@ const TICK: Duration = Duration::from_secs(5 * 60);
 /// Wait for the game to finish writing before reading.
 const SETTLE: Duration = Duration::from_secs(3);
 /// Only rewrite the game's save once this many records are safely queued, so
-/// the file is touched rarely. The addon stops recording at 5,000.
+/// the file is touched rarely. The addon stops recording at 10,000.
 pub const ROLLOVER_AT: i64 = 200;
+/// Past this many records in a save, tell the player: rollover has not been
+/// able to run (WoW kept open) and the addon is close to its 10,000 limit.
+pub const NEAR_FULL_AT: i64 = 8000;
 /// Seconds between asking restedrealm.com for the background spell list, and
 /// the wait after a failed attempt.
 const SPELL_LIST_EVERY: i64 = 6 * 3600;
@@ -151,6 +154,10 @@ fn cycle(app: &AppHandle, shared: &Shared, queue: &mut Queue, game: Option<&Path
         }
     }
 
+    if problem.is_none() {
+        problem = near_full_warning(queue, &saves);
+    }
+
     {
         let mut live = shared.live.lock().unwrap();
         live.last_error = problem;
@@ -158,6 +165,20 @@ fn cycle(app: &AppHandle, shared: &Shared, queue: &mut Queue, game: Option<&Path
     }
     crate::tray::refresh(shared);
     set_working(app, shared, false);
+}
+
+/// A loud warning before the addon fills up, and while it is dropping.
+fn near_full_warning(queue: &Queue, saves: &[PathBuf]) -> Option<String> {
+    saves.iter().find_map(|path| {
+        let (records, dropped) = queue.imported_counts(&source_id(path).ok()?).ok()??;
+        if records < NEAR_FULL_AT {
+            return None;
+        }
+        let skipped = if dropped > 0 { format!(" and has skipped {dropped} observations") } else { String::new() };
+        Some(format!(
+            "The addon holds {records} of 10,000 records{skipped}. Exit WoW completely so the Companion can empty it."
+        ))
+    })
 }
 
 /// Keep the addon's background spell list current: asked for every six hours,

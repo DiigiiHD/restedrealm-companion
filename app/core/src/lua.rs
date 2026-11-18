@@ -66,7 +66,7 @@ impl Value {
     }
 }
 
-/// Values in one save. A full 5,000-record save uses well under a million.
+/// Values in one save. A full 10,000-record save uses well under two million.
 const MAX_NODES: usize = 4_000_000;
 const MAX_DEPTH: usize = 64;
 

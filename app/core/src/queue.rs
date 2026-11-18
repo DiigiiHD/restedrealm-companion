@@ -174,6 +174,16 @@ impl Queue {
             .optional()?)
     }
 
+    /// Records and dropped count in the last import of one save, if any.
+    pub fn imported_counts(&self, source_id: &str) -> Result<Option<(i64, i64)>> {
+        Ok(self
+            .db
+            .query_row("SELECT record_count, dropped FROM imports WHERE source_id=?", [source_id], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .optional()?)
+    }
+
     /// Queued records by kind whose `observedAt` is at or after `since`.
     pub fn kinds_since(&self, since: i64) -> Result<Vec<(String, i64)>> {
         let mut statement = self.db.prepare(

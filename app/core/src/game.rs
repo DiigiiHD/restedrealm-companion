@@ -30,6 +30,19 @@ pub fn saved_files(game: &Path) -> Vec<PathBuf> {
     files
 }
 
+/// Whether a running process is the game. The name alone is not enough: tools
+/// like WowUp (`WowUp-CF.exe`) also start with "Wow" and run all day, which
+/// held back rollover for weeks. A game client sits in its version folder
+/// beside `WTF` (or below the install's `.build.info`). A path that cannot be
+/// read counts as the game, so rollover never races it.
+pub fn is_game_process(name: &str, path: Option<&Path>) -> bool {
+    if !is_game_executable(name) {
+        return false;
+    }
+    let Some(folder) = path.and_then(Path::parent) else { return true };
+    folder.join("WTF").is_dir() || folder.parent().is_some_and(|root| root.join(".build.info").is_file())
+}
+
 #[cfg(windows)]
 pub fn wow_running() -> bool {
     use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
@@ -50,7 +63,8 @@ pub fn wow_running() -> bool {
         while more {
             let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
             let name = String::from_utf16_lossy(&entry.szExeFile[..len]);
-            if is_game_executable(&name) {
+            // Name first: only open processes that could be the game.
+            if is_game_executable(&name) && is_game_process(&name, image_path(entry.th32ProcessID).as_deref()) {
                 found = true;
                 break;
             }
@@ -58,6 +72,27 @@ pub fn wow_running() -> bool {
         }
         CloseHandle(snapshot);
         found
+    }
+}
+
+/// The full path of a process's executable, if Windows lets us read it.
+#[cfg(windows)]
+fn image_path(pid: u32) -> Option<PathBuf> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // SAFETY: the handle is checked and closed; the buffer length is passed in and updated.
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return None;
+        }
+        let mut buffer = [0u16; 1024];
+        let mut len = buffer.len() as u32;
+        let ok = QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, buffer.as_mut_ptr(), &mut len) != 0;
+        CloseHandle(handle);
+        ok.then(|| PathBuf::from(String::from_utf16_lossy(&buffer[..len as usize])))
     }
 }
 
@@ -78,6 +113,25 @@ mod tests {
         for name in ["Battle.net.exe", "Agent.exe", "wow", "notwow.exe", "explorer.exe"] {
             assert!(!is_game_executable(name), "{name}");
         }
+    }
+
+    #[test]
+    fn addon_managers_named_wow_do_not_hold_back_rollover() {
+        let dir = tempfile::tempdir().unwrap();
+        let game = dir.path().join("World of Warcraft/_forever_");
+        std::fs::create_dir_all(game.join("WTF")).unwrap();
+        let other = dir.path().join("Programs/wowup-cf");
+        std::fs::create_dir_all(&other).unwrap();
+        assert!(is_game_process("Wow.exe", Some(&game.join("Wow.exe"))));
+        assert!(!is_game_process("WowUp-CF.exe", Some(&other.join("WowUp-CF.exe"))));
+        // Not yet launched once (no WTF), but inside a Blizzard install.
+        let fresh = dir.path().join("World of Warcraft/_classic_");
+        std::fs::create_dir_all(&fresh).unwrap();
+        std::fs::write(dir.path().join("World of Warcraft/.build.info"), "x").unwrap();
+        assert!(is_game_process("WowClassic.exe", Some(&fresh.join("WowClassic.exe"))));
+        // Unknown path: assume the game, never race it.
+        assert!(is_game_process("WowUp-CF.exe", None));
+        assert!(!is_game_process("explorer.exe", None));
     }
 
     #[test]

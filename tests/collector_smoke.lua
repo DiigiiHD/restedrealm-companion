@@ -620,4 +620,8 @@ assert(#RestedRealmCollectorDB.records == 0)
 assert(RestedRealmCollectorDB.sightingCount == 0)
 assert(next(RestedRealmCollectorDB.questFingerprints) == nil)
 assert(next(RestedRealmCollectorDB.spellTextFingerprints) == nil)
+-- After the Companion empties the list, the next load starts counting drops afresh.
+RestedRealmCollectorDB.dropped, RestedRealmCollectorDB.fullNotice = 170373, true
+frame.callback(frame, "ADDON_LOADED", "RestedRealmCollector")
+assert(RestedRealmCollectorDB.dropped == 0 and RestedRealmCollectorDB.fullNotice == false)
 print("collector smoke passed")

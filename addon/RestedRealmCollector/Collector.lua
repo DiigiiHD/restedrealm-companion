@@ -1,11 +1,14 @@
 -- RestedRealm Forever collection probe. No gameplay actions or network access.
 local ADDON = ...
-local VERSION = "0.1.21"
+local VERSION = "0.1.22"
 local IDENTITY_SCHEMA = 2
 -- 1: player name, race and class in captured text are replaced by <name>,
 -- <race> and <class>. Only records carrying this may upload their text.
 local TEXT_SCHEMA = 1
-local MAX_RECORDS = 5000
+local MAX_RECORDS = 10000
+-- Warn once at this many, while there is still room: the Companion empties
+-- the list only after WoW is fully closed.
+local NEAR_FULL = 8000
 local MAX_TEXT = 8192
 local MAX_ITEMS = 200
 local MAX_QUEST_ENTRIES = 100
@@ -303,6 +306,10 @@ record = function(kind, data)
             message("local storage is full. Collection paused until data is copied out.")
         end
         return
+    end
+    if #db.records >= NEAR_FULL and not db.nearFullNotice then
+        db.nearFullNotice = true
+        message("local storage is 80% full. Exit WoW completely so RestedRealm Companion can empty it.")
     end
     db.nextSeq = (db.nextSeq or 0) + 1
     local observedAt = call(GetServerTime) or call(time)
@@ -2087,6 +2094,7 @@ local function command(value)
         db.sightingCount = 0
         db.dropped = 0
         db.fullNotice = false
+        db.nearFullNotice = false
         message("saved observations cleared on this PC.")
     elseif value == "status" or value == "" then
         status()
@@ -2241,6 +2249,13 @@ frame:SetScript("OnEvent", function(_, event, ...)
             .. tostring(call(GetLocale) or "unknown_locale")
         db.schema = 1
         if type(db.records) ~= "table" then db.records = {} end
+        if #db.records == 0 then
+            -- The Companion emptied the list after copying it: start counting afresh,
+            -- so "dropped" means skipped since the last emptying.
+            db.dropped = 0
+            db.fullNotice = false
+            db.nearFullNotice = false
+        end
         if db.identitySchema ~= IDENTITY_SCHEMA then
             -- Older records stored the zone field as an NPC/object ID.
             -- Keep their other observations, but prevent a false entity join.

@@ -10,7 +10,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// A full addon save (5,000 records with quest text) stays far below this.
+/// A full addon save (10,000 records with quest text) stays far below this.
 pub const MAX_SAVE_BYTES: u64 = 128 * 1024 * 1024;
 pub const MAX_RECORDS: usize = 50_000;
 pub const FOREVER_PRODUCT: &str = "wow_classic_beta";
@@ -379,11 +379,11 @@ pub(crate) mod tests {
         assert!(matches!(check.get("unlocks"), Some(Value::List(list)) if list.len() == 1));
     }
 
-    /// A full addon save: 5,000 records with quest text, items and objectives.
+    /// A full addon save: 10,000 records with quest text, items and objectives.
     fn full_save() -> String {
         let text = "Greetings, <name>. ".repeat(55);
         let mut out = String::from("RestedRealmCollectorDB = {\n [\"dropped\"] = 0, [\"records\"] = {\n");
-        for seq in 1..=5000 {
+        for seq in 1..=10_000 {
             out.push_str(&format!(
                 "  {{ [\"seq\"] = {seq}, [\"kind\"] = \"quest\", [\"textSchema\"] = 1, [\"observedAt\"] = 1790000000, \
                  [\"context\"] = {{ [\"product\"] = \"wow_classic_beta\", [\"build\"] = \"70009\", [\"locale\"] = \"enUS\", \
@@ -399,7 +399,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_full_5000_record_save_is_read_and_freed() {
+    fn a_full_10000_record_save_is_read_and_freed() {
         let mut f = Fixture::new();
         let save = full_save();
         assert!((save.len() as u64) < MAX_SAVE_BYTES / 4, "a full save is {} bytes", save.len());
@@ -407,9 +407,9 @@ pub(crate) mod tests {
         let started = std::time::Instant::now();
         let result = f.scan().unwrap();
         let took = started.elapsed();
-        assert_eq!(result.new, 5000);
+        assert_eq!(result.new, 10_000);
         eprintln!("full save: {} MB, imported in {:?}", save.len() / 1_000_000, took);
-        assert_eq!(compact_one(&f.queue, &f.path, Duration::ZERO, &|| false).unwrap(), 5000);
+        assert_eq!(compact_one(&f.queue, &f.path, Duration::ZERO, &|| false).unwrap(), 10_000);
     }
 
     #[test]
